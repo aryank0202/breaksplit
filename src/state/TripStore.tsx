@@ -45,6 +45,7 @@ type Action =
         splits: Split[];
       };
     }
+    | { type: "DELETE_EXPENSE"; payload: { expenseId: string }}
   | {
       type: "TOGGLE_SPLIT_PAID";
       payload: { expenseId: string; memberId: string; paid: boolean };
@@ -83,6 +84,15 @@ function reducer(state: State, action: Action): State {
         ),
       };
 
+      case "DELETE_EXPENSE": {
+        const { expenseId } = action.payload;
+        return {
+          ...state,
+          expenses: state.expenses.filter((e) => e.id !== expenseId),
+          splits: state.splits.filter((s) => s.expenseId !== expenseId),
+        };
+      }
+
     default:
       return state;
   }
@@ -100,12 +110,17 @@ const TripContext = createContext<
         notes?: string;
       }) => string; // returns expenseId
       togglePaid: (expenseId: string, memberId: string, paid: boolean) => void;
+      deleteExpense: (expenseId: string) => void;
     }
   | undefined
 >(undefined);
 
 export function TripProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+
+  function deleteExpense(expenseId: string) {
+    dispatch({ type: "DELETE_EXPENSE", payload: { expenseId } });
+  }
 
   function addExpense(args: {
     title: string;
@@ -145,7 +160,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: "TOGGLE_SPLIT_PAID", payload: { expenseId, memberId, paid } });
   }
 
-  const value = useMemo(() => ({ state, addExpense, togglePaid }), [state]);
+  const value = useMemo(() => ({ state, addExpense, togglePaid, deleteExpense}), [state]);
 
   return <TripContext.Provider value={value}>{children}</TripContext.Provider>;
 }

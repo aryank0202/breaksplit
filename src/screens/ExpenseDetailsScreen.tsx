@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, Pressable, FlatList, Modal } from "react-native";
+import { View, Text, Pressable, FlatList, Modal, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
 import Card from "../components/Card";
@@ -21,7 +21,7 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const [showVenmoModal, setShowVenmoModal] = useState(false);
 
-  const { state, togglePaid } = useTrip();
+  const { state, togglePaid, deleteExpense } = useTrip();
   const expenseId = route?.params?.expenseId as string;
 
   const expense = state.expenses.find((e) => e.id === expenseId);
@@ -80,6 +80,22 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
   const mySplit = state.splits.find((s) => s.expenseId === expenseId && s.memberId === "me");
   const myShare = mySplit ? centsToDollars(mySplit.owedCents) : "$0.00";
 
+  const isPayer = expense.paidById === "me";         // you paid/created it
+  const canDelete = expense.paidById === "me";       // only creator can delete (same as payer for now)
+
+  // If you paid, show collecting total (unpaid splits excluding you)
+  const collectingCents = state.splits
+    .filter((s) => s.expenseId === expenseId && s.memberId !== "me" && !s.paid)
+    .reduce((a, b) => a + b.owedCents, 0);
+
+  const collecting = centsToDollars(collectingCents);
+
+  const iOweUnpaid =
+    !!mySplit &&
+    !isPayer &&           // safeguard: if you paid it, you can’t owe yourself
+    !mySplit.paid &&
+    mySplit.owedCents > 0;
+
   const payLabel = useMemo(() => `Pay ${myShare} in Venmo`, [myShare]);
 
   function onOpenVenmo() {
@@ -103,21 +119,51 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
           backgroundColor: theme.colors.bg,
         }}
       >
-        <Row style={{ gap: 10 }}>
-          <Pressable
-            onPress={() => navigation.goBack()}
-            style={({ pressed }) => ({
-              padding: 10,
-              borderRadius: 12,
-              opacity: pressed ? 0.9 : 1,
-            })}
-          >
-            <Text style={{ fontSize: 18, fontWeight: "900", color: theme.colors.primary }}>‹</Text>
-          </Pressable>
+        <Row style={{ gap: 10, alignItems: "center", justifyContent: "space-between" }}>
+          <Row style={{ gap: 10, alignItems: "center" }}>
+            <Pressable
+              onPress={() => navigation.goBack()}
+              style={({ pressed }) => ({
+                padding: 10,
+                borderRadius: 12,
+                opacity: pressed ? 0.9 : 1,
+              })}
+            >
+              <Text style={{ fontSize: 18, fontWeight: "900", color: theme.colors.primary }}>‹</Text>
+            </Pressable>
+            <Text style={{ fontSize: 22, fontWeight: "900", color: theme.colors.text }}>
+              Expense Details
+            </Text>
+          </Row>
 
-          <Text style={{ fontSize: 22, fontWeight: "900", color: theme.colors.text }}>
-            Expense Details
-          </Text>
+          {canDelete ? (
+            <Pressable
+              onPress={() => {
+                Alert.alert(
+                  "Delete expense?",
+                  "This will remove the expense for everyone.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Delete",
+                      style: "destructive",
+                      onPress: () => {
+                        deleteExpense(expenseId);
+                        navigation.goBack();
+                      },
+                    },
+                  ]
+                );
+              }}
+              style={({ pressed }) => ({
+                padding: 10,
+                borderRadius: 12,
+                opacity: pressed ? 0.9 : 1,
+              })}
+            >
+              <Text style={{ fontSize: 18 }}>🗑️</Text>
+            </Pressable>
+          ) : null}
         </Row>
       </View>
 
@@ -214,21 +260,57 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
         }
       />
 
-      {/* Bottom Pay button */}
+      {/* Bottom Action Button */}
       <View style={{ position: "absolute", left: 20, right: 20, bottom: 20 + insets.bottom }}>
-        <Pressable
-          onPress={() => setShowVenmoModal(true)}
-          style={({ pressed }) => ({
-            backgroundColor: "#3B82F6",
-            paddingVertical: 16,
-            borderRadius: 16,
-            alignItems: "center",
-            opacity: pressed ? 0.9 : 1,
-          })}
-        >
-          <Text style={{ color: "white", fontWeight: "900", fontSize: 16 }}>{payLabel}</Text>
-        </Pressable>
+        {isPayer ? (
+          <View
+            style={{
+              backgroundColor: "white",
+              paddingVertical: 14,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: theme.colors.border,
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ fontWeight: "900", fontSize: 16, color: theme.colors.text }}>
+              You paid this expense
+            </Text>
+            <Text style={{ marginTop: 6, fontWeight: "800", color: theme.colors.muted }}>
+              {collectingCents > 0 ? `Collecting ${collecting}` : "Everyone has paid ✅"}
+            </Text>
+          </View>
+        ) : iOweUnpaid ? (
+          <Pressable
+            onPress={() => setShowVenmoModal(true)}
+            style={({ pressed }) => ({
+              backgroundColor: "#3B82F6",
+              paddingVertical: 16,
+              borderRadius: 16,
+              alignItems: "center",
+              opacity: pressed ? 0.9 : 1,
+            })}
+          >
+            <Text style={{ color: "white", fontWeight: "900", fontSize: 16 }}>
+              {payLabel}
+            </Text>
+          </Pressable>
+        ) : (
+          <View
+            style={{
+              backgroundColor: "#E5E7EB",
+              paddingVertical: 16,
+              borderRadius: 16,
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ color: "#6B7280", fontWeight: "900", fontSize: 16 }}>
+              {mySplit && mySplit.owedCents === 0 ? "Nothing owed ✅" : "Paid ✅"}
+            </Text>
+          </View>
+        )}
       </View>
+      
 
       {/* Venmo confirmation modal */}
       <Modal visible={showVenmoModal} transparent animationType="slide">

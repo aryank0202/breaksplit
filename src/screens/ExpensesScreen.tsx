@@ -112,6 +112,10 @@ function SummaryMini({
 export default function ExpensesScreen({ navigation }: any) {
   const { state } = useTrip();
 
+  function sum(nums: number[]) {
+    return nums.reduce((a, b) => a + b, 0);
+  }
+
   function formatShortDate(ms : number) {
     const d = new Date(ms);
     return d.toLocaleDateString(undefined, {month: "short", day: "numeric" }) // Mar 9 
@@ -120,8 +124,24 @@ export default function ExpensesScreen({ navigation }: any) {
   function memberName(id : string) {
     return state.members.find((m) => m.id === id)?.name ?? "Unknown";
   }
-  const youOwe = "$42.67";
-  const youreOwed = "$87.50";
+  const youOweCents = sum (
+    state.splits
+    .filter((s) => s.memberId === "me" && !s.paid)
+    .map((s) => s.owedCents)
+  );
+
+  const youreOwedCents = sum(
+  state.splits
+    .filter((s) => s.memberId !== "me" && !s.paid)
+    .filter((s) => {
+      const exp = state.expenses.find((e) => e.id === s.expenseId);
+      return exp?.paidById === "me";
+    })
+    .map((s) => s.owedCents)
+);
+
+const youOwe = centsToDollars(youOweCents);
+const youreOwed = centsToDollars(youreOwedCents);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
@@ -147,6 +167,32 @@ export default function ExpensesScreen({ navigation }: any) {
           const total = centsToDollars(item.totalCents);
           const date = formatShortDate(item.createdAt);
 
+          const expenseSplits = state.splits.filter((s) => s.expenseId === item.id);
+
+          // Your split for this expense
+          const mySplit = expenseSplits.find((s) => s.memberId === "me");
+          const myShareCents = mySplit?.owedCents ?? 0;
+          const myShare = centsToDollars(myShareCents);
+
+          // If YOU paid this expense, compute how much you're still collecting
+          const collectingCents =
+            item.paidById === "me"
+              ? sum(expenseSplits.filter((s) => s.memberId !== "me" && !s.paid).map((s) => s.owedCents))
+              : 0;
+
+          const collecting = centsToDollars(collectingCents);
+
+          // Status pill logic
+          let pill: { label: string; tone: "success" | "danger" | "info" };
+
+          if (item.paidById === "me") {
+            // You paid
+            pill = collectingCents > 0 ? { label: "Collecting", tone: "info" } : { label: "Paid", tone: "success" };
+          } else {
+            // Someone else paid
+            pill = mySplit && mySplit.paid ? { label: "Paid", tone: "success" } : { label: "Unpaid", tone: "danger" };
+          }
+
           return (
     <Pressable
       onPress={() => navigation.navigate("ExpenseDetails", { expenseId: item.id })}
@@ -157,23 +203,19 @@ export default function ExpensesScreen({ navigation }: any) {
     >
       <Card>
         {/* Title + amount + date */}
-        <Row style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-          <View style={{ flex: 1, paddingRight: 12 }}>
-            <Text style={{ fontWeight: "900", fontSize: 16, color: theme.colors.text }}>
-              {item.title}
-            </Text>
-            <Text style={{ marginTop: 6, color: theme.colors.muted, fontWeight: "700" }}>
-              Paid by {paidBy}
-            </Text>
-          </View>
+        <Row style={{ justifyContent: "space-between", marginTop: 14 }}>
+  {item.paidById === "me" ? (
+    <Text style={{ color: theme.colors.success, fontWeight: "900" }}>
+      Collecting {collecting}
+    </Text>
+  ) : (
+    <Text style={{ color: theme.colors.text, fontWeight: "800" }}>
+      Your share: <Text style={{ fontWeight: "900" }}>{myShare}</Text>
+    </Text>
+  )}
 
-          <View style={{ alignItems: "flex-end", gap: 6 }}>
-            <Text style={{ fontWeight: "900", fontSize: 16, color: theme.colors.text }}>
-              {total}
-            </Text>
-            <Text style={{ color: theme.colors.muted, fontWeight: "700" }}>{date}</Text>
-          </View>
-        </Row>
+  <Pill label={pill.label} tone={pill.tone} />
+</Row>
 
         {/* Status row (temporary, until we compute shares/collecting) */}
         <Row style={{ justifyContent: "space-between", marginTop: 14 }}>
