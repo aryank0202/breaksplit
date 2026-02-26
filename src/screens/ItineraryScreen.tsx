@@ -97,7 +97,7 @@ export default function DashboardScreen({ navigation }: any) {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <FlatList
-        contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: 20 }}
         ListHeaderComponent={
           <View style={{ gap: 16 }}>
             <View>
@@ -132,7 +132,7 @@ export default function DashboardScreen({ navigation }: any) {
 
             <OutlineButton
               label="Add Itinerary Item"
-              onPress={() => {}}
+              onPress={() => navigation.navigate("ItineraryDay")}
             />
 
             <Text style={{ fontSize: 20, fontWeight: "800", marginTop: 8 }}>
