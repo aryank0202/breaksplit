@@ -5,6 +5,7 @@ import Card from "../components/Card";
 import Row from "../components/Row";
 import Chip from "../components/Chip";
 import Segmented from "../components/Segmented";
+import { useTrip } from "../state/TripStore";
 
 type SplitType = "equal" | "custom" | "percent";
 
@@ -13,13 +14,6 @@ type Member = {
   name: string;
 };
 
-const mockMembers: Member[] = [
-  { id: "aryan", name: "Aryan" },
-  { id: "sarah", name: "Sarah" },
-  { id: "mike", name: "Mike" },
-  { id: "emma", name: "Emma" },
-  { id: "jake", name: "Jake" },
-];
 
 function dollarsToCents(input: string) {
   // allow "12", "12.3", "12.34"
@@ -35,21 +29,22 @@ function centsToDollars(cents: number) {
 }
 
 export default function AddExpenseScreen({ navigation }: any) {
+  const { state, addExpense } = useTrip();
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState(""); // dollars string
-  const [payerId, setPayerId] = useState("aryan");
+  const [payerId, setPayerId] = useState("me");
   const [splitType, setSplitType] = useState<SplitType>("equal");
 
   const [selectedIds, setSelectedIds] = useState<string[]>(
-    mockMembers.map((m) => m.id)
-  );
+  state.members.map((m) => m.id)
+);
 
   const amountCents = useMemo(() => dollarsToCents(amount), [amount]);
 
   const selectedMembers = useMemo(
-    () => mockMembers.filter((m) => selectedIds.includes(m.id)),
-    [selectedIds]
-  );
+  () => state.members.filter((m) => selectedIds.includes(m.id)),
+  [state.members, selectedIds]
+);
 
   const equalPreview = useMemo(() => {
     const n = selectedMembers.length;
@@ -70,26 +65,16 @@ export default function AddExpenseScreen({ navigation }: any) {
   }
 
   function onCreate() {
-    if (!title.trim()) {
-      Alert.alert("Missing title", "Add a title like Uber, dinner, groceries, etc.");
-      return;
-    }
-    if (amountCents <= 0) {
-      Alert.alert("Invalid amount", "Enter a valid amount.");
-      return;
-    }
-    if (selectedMembers.length < 2) {
-      Alert.alert("Select participants", "Pick at least 2 people to split with.");
-      return;
-    }
-
-    // UI-only MVP: just show what would be created
-    Alert.alert(
-      "Expense created (mock)",
-      `${title} • $${centsToDollars(amountCents)} • payer: ${payerId} • split: ${splitType}`
-    );
+    const expenseId = addExpense({
+  title: title.trim(),
+  totalCents: amountCents,
+  paidById: payerId,
+  participantIds: selectedIds,
+  notes: "", // optional
+});
 
     navigation.goBack();
+    
   }
 
   return (
@@ -156,7 +141,7 @@ export default function AddExpenseScreen({ navigation }: any) {
             Who Paid?
           </Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-            {mockMembers.map((m) => (
+            {state.members.map((m) => (
               <Chip
                 key={m.id}
                 label={m.name}
@@ -194,7 +179,7 @@ export default function AddExpenseScreen({ navigation }: any) {
           </Text>
 
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-            {mockMembers.map((m) => (
+            {state.members.map((m) => (
               <Chip
                 key={m.id}
                 label={m.name}

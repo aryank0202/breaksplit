@@ -4,6 +4,7 @@ import { theme } from "../theme";
 import Card from "../components/Card";
 import Pill from "../components/Pill";
 import Row from "../components/Row";
+import { useTrip, centsToDollars } from "../state/TripStore";
 
 type ExpenseRow =
   | {
@@ -109,6 +110,16 @@ function SummaryMini({
 }
 
 export default function ExpensesScreen({ navigation }: any) {
+  const { state } = useTrip();
+
+  function formatShortDate(ms : number) {
+    const d = new Date(ms);
+    return d.toLocaleDateString(undefined, {month: "short", day: "numeric" }) // Mar 9 
+  }
+
+  function memberName(id : string) {
+    return state.members.find((m) => m.id === id)?.name ?? "Unknown";
+  }
   const youOwe = "$42.67";
   const youreOwed = "$87.50";
 
@@ -129,62 +140,53 @@ export default function ExpensesScreen({ navigation }: any) {
             </Text>
           </View>
         }
-        data={mockExpenses}
+        data={state.expenses}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => {
-          const pill =
-            item.status === "Paid"
-              ? { label: "Paid", tone: "success" as const }
-              : item.status === "Collecting"
-              ? { label: "Collecting", tone: "info" as const }
-              : { label: "Unpaid", tone: "danger" as const };
+          const paidBy = memberName(item.paidById);
+          const total = centsToDollars(item.totalCents);
+          const date = formatShortDate(item.createdAt);
 
           return (
-  <Pressable
-    onPress={() => navigation.navigate("ExpenseDetails")}
-    style={({ pressed }) => ({
-      marginTop: 12,
-      opacity: pressed ? 0.92 : 1,
-    })}
-  >
-    <Card>
-      {/* Title + amount + date */}
-      <Row style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-        <View style={{ flex: 1, paddingRight: 12 }}>
-          <Text style={{ fontWeight: "900", fontSize: 16, color: theme.colors.text }}>
-            {item.title}
-          </Text>
-          <Text style={{ marginTop: 6, color: theme.colors.muted, fontWeight: "700" }}>
-            Paid by {item.paidBy}
-          </Text>
-        </View>
+    <Pressable
+      onPress={() => navigation.navigate("ExpenseDetails", { expenseId: item.id })}
+      style={({ pressed }) => ({
+        marginTop: 12,
+        opacity: pressed ? 0.92 : 1,
+      })}
+    >
+      <Card>
+        {/* Title + amount + date */}
+        <Row style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <Text style={{ fontWeight: "900", fontSize: 16, color: theme.colors.text }}>
+              {item.title}
+            </Text>
+            <Text style={{ marginTop: 6, color: theme.colors.muted, fontWeight: "700" }}>
+              Paid by {paidBy}
+            </Text>
+          </View>
 
-        <View style={{ alignItems: "flex-end", gap: 6 }}>
-          <Text style={{ fontWeight: "900", fontSize: 16, color: theme.colors.text }}>
-            {item.total}
-          </Text>
-          <Text style={{ color: theme.colors.muted, fontWeight: "700" }}>{item.date}</Text>
-        </View>
-      </Row>
+          <View style={{ alignItems: "flex-end", gap: 6 }}>
+            <Text style={{ fontWeight: "900", fontSize: 16, color: theme.colors.text }}>
+              {total}
+            </Text>
+            <Text style={{ color: theme.colors.muted, fontWeight: "700" }}>{date}</Text>
+          </View>
+        </Row>
 
-      {/* Bottom row: share/collecting + status */}
-      <Row style={{ justifyContent: "space-between", marginTop: 14 }}>
-        {item.mode === "you_owe" ? (
+        {/* Status row (temporary, until we compute shares/collecting) */}
+        <Row style={{ justifyContent: "space-between", marginTop: 14 }}>
           <Text style={{ color: theme.colors.text, fontWeight: "800" }}>
-            Your share: <Text style={{ fontWeight: "900" }}>{item.yourShare}</Text>
+            Tap to view split details
           </Text>
-        ) : (
-          <Text style={{ color: theme.colors.success, fontWeight: "900" }}>
-            Collecting {item.collecting}
-          </Text>
-        )}
 
-        <Pill label={pill.label} tone={pill.tone} />
-      </Row>
-    </Card>
-  </Pressable>
-);
-        }}
+          <Pill label="Active" tone="info" />
+        </Row>
+      </Card>
+    </Pressable>
+  );
+}}
       />
 
       {/* Bottom CTA */}

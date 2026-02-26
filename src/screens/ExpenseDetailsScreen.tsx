@@ -6,45 +6,90 @@ import Card from "../components/Card";
 import Row from "../components/Row";
 import Avatar from "../components/Avatar";
 import Pill from "../components/Pill";
+import { useTrip, centsToDollars } from "../state/TripStore";
 
 type SplitRow = {
-  id: string;
+  memberId: string;
   name: string;
   initials: string;
   color: string;
   owes: string;
-  status: "Paid" | "Unpaid";
+  paid: boolean;
 };
 
 export default function ExpenseDetailsScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const [showVenmoModal, setShowVenmoModal] = useState(false);
 
-  // For now: use passed data if provided, otherwise fallback mock
-  const expense = route?.params?.expense ?? {
-    title: "Uber to South Beach",
-    total: "$114.00",
-    paidByName: "Mike Johnson",
-    paidByInitials: "MJ",
-    paidByColor: "#22C55E",
-    yourShare: "$28.50",
-    notes: "Ride from hotel to South Beach around 8pm. Split 4 ways.",
-  };
+  const { state, togglePaid } = useTrip();
+  const expenseId = route?.params?.expenseId as string;
 
-  const splitRows: SplitRow[] = route?.params?.splitRows ?? [
-    { id: "1", name: "Sarah Martinez", initials: "SM", color: "#A855F7", owes: "$28.50", status: "Paid" },
-    { id: "2", name: "Mike Johnson", initials: "MJ", color: "#22C55E", owes: "$28.50", status: "Unpaid" },
-    { id: "3", name: "Emma Kim", initials: "EK", color: "#EC4899", owes: "$28.50", status: "Paid" },
-    { id: "4", name: "You", initials: "ME", color: "#3B82F6", owes: "$28.50", status: "Unpaid" },
-  ];
+  const expense = state.expenses.find((e) => e.id === expenseId);
 
-  const payLabel = useMemo(() => `Pay ${expense.yourShare} in Venmo`, [expense.yourShare]);
+  if (!expense) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: theme.colors.bg,
+          justifyContent: "center",
+          alignItems: "center",
+          padding: 20,
+        }}
+      >
+        <Text style={{ fontWeight: "900", fontSize: 16, color: theme.colors.text }}>
+          Expense not found.
+        </Text>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={({ pressed }) => ({
+            marginTop: 14,
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: theme.colors.border,
+            backgroundColor: "white",
+            opacity: pressed ? 0.9 : 1,
+          })}
+        >
+          <Text style={{ fontWeight: "900", color: theme.colors.text }}>Go back</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const payer = state.members.find((m) => m.id === expense.paidById);
+
+  const splitRows: SplitRow[] = useMemo(() => {
+    return state.splits
+      .filter((s) => s.expenseId === expenseId)
+      .map((s) => {
+        const member = state.members.find((m) => m.id === s.memberId);
+        return {
+          memberId: s.memberId,
+          name: member?.name ?? "Unknown",
+          initials: member?.initials ?? "?",
+          color: member?.color ?? "#9CA3AF",
+          owes: centsToDollars(s.owedCents),
+          paid: s.paid,
+        };
+      });
+  }, [state.splits, state.members, expenseId]);
+
+  const mySplit = state.splits.find((s) => s.expenseId === expenseId && s.memberId === "me");
+  const myShare = mySplit ? centsToDollars(mySplit.owedCents) : "$0.00";
+
+  const payLabel = useMemo(() => `Pay ${myShare} in Venmo`, [myShare]);
 
   function onOpenVenmo() {
-    // Later: call openVenmoPay(...) with payer handle, amount, note
+    // Later: open Venmo deep link using handle + amount + note
     setShowVenmoModal(false);
-    // placeholder:
-    // Alert.alert("Venmo", "Would open Venmo deep link here.");
+
+    // Optional UX for now: mark YOU as paid after "Open Venmo"
+    if (mySplit && !mySplit.paid) {
+      togglePaid(expenseId, "me", true);
+    }
   }
 
   return (
@@ -67,9 +112,7 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
               opacity: pressed ? 0.9 : 1,
             })}
           >
-            <Text style={{ fontSize: 18, fontWeight: "900", color: theme.colors.primary }}>
-              ‹
-            </Text>
+            <Text style={{ fontSize: 18, fontWeight: "900", color: theme.colors.primary }}>‹</Text>
           </Pressable>
 
           <Text style={{ fontSize: 22, fontWeight: "900", color: theme.colors.text }}>
@@ -81,7 +124,7 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
       <FlatList
         contentContainerStyle={{ padding: 20, paddingBottom: 140 }}
         data={splitRows}
-        keyExtractor={(x) => x.id}
+        keyExtractor={(x) => x.memberId}
         ListHeaderComponent={
           <View style={{ gap: 14 }}>
             {/* Top expense card */}
@@ -94,7 +137,7 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
                 Total Amount
               </Text>
               <Text style={{ marginTop: 6, fontSize: 28, fontWeight: "900", color: theme.colors.text }}>
-                {expense.total}
+                {centsToDollars(expense.totalCents)}
               </Text>
 
               <View style={{ height: 1, backgroundColor: theme.colors.border, marginVertical: 14 }} />
@@ -102,9 +145,9 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
               <Text style={{ color: theme.colors.muted, fontWeight: "800" }}>Paid by</Text>
 
               <Row style={{ gap: 12, marginTop: 10 }}>
-                <Avatar initials={expense.paidByInitials} bgColor={expense.paidByColor} />
+                <Avatar initials={payer?.initials ?? "?"} bgColor={payer?.color ?? "#9CA3AF"} />
                 <Text style={{ fontWeight: "900", color: theme.colors.text }}>
-                  {expense.paidByName}
+                  {payer?.name ?? "Unknown"}
                 </Text>
               </Row>
             </Card>
@@ -121,10 +164,9 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
           </View>
         }
         renderItem={({ item, index }) => {
-          const pill =
-            item.status === "Paid"
-              ? { label: "Paid", tone: "success" as const }
-              : { label: "Unpaid", tone: "danger" as const };
+          const pill = item.paid
+            ? { label: "Paid", tone: "success" as const }
+            : { label: "Unpaid", tone: "danger" as const };
 
           return (
             <Card
@@ -141,9 +183,7 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
                   <Avatar initials={item.initials} bgColor={item.color} />
 
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: "900", color: theme.colors.text }}>
-                      {item.name}
-                    </Text>
+                    <Text style={{ fontWeight: "900", color: theme.colors.text }}>{item.name}</Text>
                     <Text style={{ marginTop: 4, color: theme.colors.muted, fontWeight: "700" }}>
                       Owes {item.owes}
                     </Text>
@@ -165,7 +205,9 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
                 Notes
               </Text>
               <Text style={{ marginTop: 10, color: theme.colors.muted, fontWeight: "600", lineHeight: 20 }}>
-                {expense.notes}
+                {expense.notes?.trim()
+                  ? expense.notes
+                  : "No notes for this expense yet."}
               </Text>
             </Card>
           </View>
@@ -177,16 +219,14 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
         <Pressable
           onPress={() => setShowVenmoModal(true)}
           style={({ pressed }) => ({
-            backgroundColor: "#3B82F6", // closer to your screenshot blue
+            backgroundColor: "#3B82F6",
             paddingVertical: 16,
             borderRadius: 16,
             alignItems: "center",
             opacity: pressed ? 0.9 : 1,
           })}
         >
-          <Text style={{ color: "white", fontWeight: "900", fontSize: 16 }}>
-            {payLabel}
-          </Text>
+          <Text style={{ color: "white", fontWeight: "900", fontSize: 16 }}>{payLabel}</Text>
         </Pressable>
       </View>
 
