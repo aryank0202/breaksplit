@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import TripHomeScreen from "../screens/TripHomeScreen";
 import AddExpenseScreen from "../screens/AddExpenseScreen";
 import ItineraryDayScreen from "../screens/ItineraryDayScreen";
+import ExpenseDetailsScreen from "../screens/ExpenseDetailsScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -25,6 +26,11 @@ export default function AppNavigator() {
         <Stack.Screen
           name = "ItineraryDay"
           component = {ItineraryDayScreen}
+          options = {{headerShown: false}}
+        />
+        <Stack.Screen
+          name = "ExpenseDetails"
+          component = {ExpenseDetailsScreen}
           options = {{headerShown: false}}
         />
       </Stack.Navigator>

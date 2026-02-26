@@ -140,43 +140,50 @@ export default function ExpensesScreen({ navigation }: any) {
               : { label: "Unpaid", tone: "danger" as const };
 
           return (
-            <Card style={{ marginTop: 12 }}>
-              {/* Title + amount + date */}
-              <Row style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={{ fontWeight: "900", fontSize: 16, color: theme.colors.text }}>
-                    {item.title}
-                  </Text>
-                  <Text style={{ marginTop: 6, color: theme.colors.muted, fontWeight: "700" }}>
-                    Paid by {item.paidBy}
-                  </Text>
-                </View>
+  <Pressable
+    onPress={() => navigation.navigate("ExpenseDetails")}
+    style={({ pressed }) => ({
+      marginTop: 12,
+      opacity: pressed ? 0.92 : 1,
+    })}
+  >
+    <Card>
+      {/* Title + amount + date */}
+      <Row style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+        <View style={{ flex: 1, paddingRight: 12 }}>
+          <Text style={{ fontWeight: "900", fontSize: 16, color: theme.colors.text }}>
+            {item.title}
+          </Text>
+          <Text style={{ marginTop: 6, color: theme.colors.muted, fontWeight: "700" }}>
+            Paid by {item.paidBy}
+          </Text>
+        </View>
 
-                <View style={{ alignItems: "flex-end", gap: 6 }}>
-                  <Text style={{ fontWeight: "900", fontSize: 16, color: theme.colors.text }}>
-                    {item.total}
-                  </Text>
-                  <Text style={{ color: theme.colors.muted, fontWeight: "700" }}>{item.date}</Text>
-                </View>
-              </Row>
+        <View style={{ alignItems: "flex-end", gap: 6 }}>
+          <Text style={{ fontWeight: "900", fontSize: 16, color: theme.colors.text }}>
+            {item.total}
+          </Text>
+          <Text style={{ color: theme.colors.muted, fontWeight: "700" }}>{item.date}</Text>
+        </View>
+      </Row>
 
-              {/* Bottom row: share/collecting + status */}
-              <Row style={{ justifyContent: "space-between", marginTop: 14 }}>
-                {item.mode === "you_owe" ? (
-                  <Text style={{ color: theme.colors.text, fontWeight: "800" }}>
-                    Your share:{" "}
-                    <Text style={{ fontWeight: "900" }}>{item.yourShare}</Text>
-                  </Text>
-                ) : (
-                  <Text style={{ color: theme.colors.success, fontWeight: "900" }}>
-                    Collecting {item.collecting}
-                  </Text>
-                )}
+      {/* Bottom row: share/collecting + status */}
+      <Row style={{ justifyContent: "space-between", marginTop: 14 }}>
+        {item.mode === "you_owe" ? (
+          <Text style={{ color: theme.colors.text, fontWeight: "800" }}>
+            Your share: <Text style={{ fontWeight: "900" }}>{item.yourShare}</Text>
+          </Text>
+        ) : (
+          <Text style={{ color: theme.colors.success, fontWeight: "900" }}>
+            Collecting {item.collecting}
+          </Text>
+        )}
 
-                <Pill label={pill.label} tone={pill.tone} />
-              </Row>
-            </Card>
-          );
+        <Pill label={pill.label} tone={pill.tone} />
+      </Row>
+    </Card>
+  </Pressable>
+);
         }}
       />
 
