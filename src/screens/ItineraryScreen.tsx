@@ -1,7 +1,12 @@
 import React from "react";
-import { View, Text, Pressable, FlatList } from "react-native";
-import Card from "../components/Card";
+import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
+import { Feather } from "@expo/vector-icons";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Avatar from "../components/Avatar";
+import Card from "../components/Card";
+import ExpensesScreen from "./ExpensesScreen";
+import MembersScreen from "./MembersScreen";
 import { theme } from "../theme";
 
 type ActivityItem = {
@@ -12,6 +17,8 @@ type ActivityItem = {
   subtitle: string;
   amount?: string;
 };
+
+const Tab = createMaterialTopTabNavigator();
 
 const mockActivity: ActivityItem[] = [
   {
@@ -90,35 +97,28 @@ function OutlineButton({
   );
 }
 
-export default function DashboardScreen({ navigation }: any) {
+function ItineraryTabContent({ navigation }: any) {
   const youOwe = "$42.18";
   const youreOwed = "$87.50";
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+    <View style={styles.screen}>
       <FlatList
-        contentContainerStyle={{ padding: 20, paddingBottom: 20 }}
+        contentContainerStyle={styles.content}
         ListHeaderComponent={
-          <View style={{ gap: 16 }}>
-            <View>
-              <Text style={{ fontSize: 28, fontWeight: "800", color: theme.colors.text }}>
-                Miami Spring Break
-              </Text>
-              <Text style={{ marginTop: 6, color: theme.colors.muted }}>
-                March 8–15, 2026
-              </Text>
-            </View>
-
+          <View style={styles.mainContent}>
             <Card style={{ flexDirection: "row", justifyContent: "space-between" }}>
               <View style={{ gap: 6 }}>
                 <Text style={{ color: theme.colors.muted, fontWeight: "600" }}>You Owe</Text>
-                <Text style={{ color: theme.colors.danger, fontSize: 22, fontWeight: "800" }}>
+                <Text style={{ color: "#EF4444", fontSize: 22, fontWeight: "800" }}>
                   {youOwe}
                 </Text>
               </View>
 
               <View style={{ gap: 6, alignItems: "flex-end" }}>
-                <Text style={{ color: theme.colors.muted, fontWeight: "600" }}>You're Owed</Text>
+                <Text style={{ color: theme.colors.muted, fontWeight: "600" }}>
+                  You're Owed
+                </Text>
                 <Text style={{ color: theme.colors.success, fontSize: 22, fontWeight: "800" }}>
                   {youreOwed}
                 </Text>
@@ -135,7 +135,7 @@ export default function DashboardScreen({ navigation }: any) {
               onPress={() => navigation.navigate("ItineraryDay")}
             />
 
-            <Text style={{ fontSize: 20, fontWeight: "800", marginTop: 8 }}>
+            <Text style={{ fontSize: 20, fontWeight: "800", marginTop: 8, color: "#111827" }}>
               Recent Activity
             </Text>
           </View>
@@ -143,7 +143,7 @@ export default function DashboardScreen({ navigation }: any) {
         data={mockActivity}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <Card style={{ marginTop: 12 }}>
+          <Card style={{ marginTop: 12, marginHorizontal: 20 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
               <Avatar initials={item.initials} bgColor={item.color} />
 
@@ -168,3 +168,101 @@ export default function DashboardScreen({ navigation }: any) {
     </View>
   );
 }
+
+export default function ItineraryScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={styles.screen}>
+      <View style={[styles.topSection, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.titleRow}>
+          <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
+            <Feather name="chevron-left" size={22} color={theme.colors.primary} />
+          </Pressable>
+          <Text style={styles.title}>Miami Spring Break</Text>
+        </View>
+
+        <View style={styles.dateRow}>
+          <Feather name="calendar" size={16} color="#475569" />
+          <Text style={styles.dateText}>March 8-15, 2026</Text>
+        </View>
+      </View>
+
+      <Tab.Navigator
+        initialRouteName="Itinerary"
+        screenOptions={{
+          swipeEnabled: true,
+          tabBarStyle: styles.tabBar,
+          tabBarIndicatorStyle: styles.tabIndicator,
+          tabBarActiveTintColor: theme.colors.primary,
+          tabBarInactiveTintColor: "#64748B",
+          tabBarLabelStyle: styles.tabLabel,
+        }}
+      >
+        <Tab.Screen name="Itinerary" component={ItineraryTabContent} />
+        <Tab.Screen name="Expenses" component={ExpensesScreen} />
+        <Tab.Screen name="Members" component={MembersScreen} />
+      </Tab.Navigator>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: "#F3F4F6",
+  },
+  content: {
+    paddingBottom: 20,
+  },
+  mainContent: {
+    paddingHorizontal: 20,
+    gap: 16,
+    marginTop: 16,
+  },
+  topSection: {
+    backgroundColor: "white",
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+    paddingBottom: 10,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  title: {
+    fontSize: 21,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  dateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 10,
+    marginLeft: 36,
+    marginBottom: 10,
+  },
+  dateText: {
+    color: "#334155",
+    fontSize: 17,
+  },
+  tabBar: {
+    backgroundColor: "white",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+  tabIndicator: {
+    backgroundColor: theme.colors.primary,
+    height: 2,
+  },
+  tabLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    textTransform: "none",
+  },
+});
