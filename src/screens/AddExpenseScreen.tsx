@@ -7,7 +7,7 @@ import Chip from "../components/Chip";
 import Segmented from "../components/Segmented";
 import { useTrip } from "../state/TripStore";
 
-type SplitType = "equal" | "custom" | "percent";
+type SplitMode = "equal" | "custom" | "percentage";
 
 type Member = {
   id: string;
@@ -33,13 +33,31 @@ export default function AddExpenseScreen({ navigation }: any) {
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState(""); // dollars string
   const [payerId, setPayerId] = useState("me");
-  const [splitType, setSplitType] = useState<SplitType>("equal");
+  const [splitMode, setSplitMode] = useState<SplitMode>("equal");
+  const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
+  const [percentages, setPercentages] = useState<Record<string, string>>({});
 
   const [selectedIds, setSelectedIds] = useState<string[]>(
   state.members.map((m) => m.id)
 );
 
   const amountCents = useMemo(() => dollarsToCents(amount), [amount]);
+
+  // helpers for new split modes
+  function toCentsFromMoneyText(s: string) {
+    const n = Number(s.replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(n)) return 0;
+    return Math.round(n * 100);
+  }
+
+  function toNumber(s: string) {
+    const n = Number(s.replace(/[^0-9.]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function dollarsFromCents(cents: number) {
+    return (cents / 100).toFixed(2);
+  }
 
   const selectedMembers = useMemo(
   () => state.members.filter((m) => selectedIds.includes(m.id)),
@@ -65,16 +83,57 @@ export default function AddExpenseScreen({ navigation }: any) {
   }
 
   function onCreate() {
-    const expenseId = addExpense({
-  title: title.trim(),
-  totalCents: amountCents,
-  paidById: payerId,
-  participantIds: selectedIds,
-  notes: "", // optional
-});
+    // validations per mode
+    if (splitMode === "custom") {
+      const sumCustom = selectedIds.reduce(
+        (acc, id) => acc + toCentsFromMoneyText(customAmounts[id] ?? "0"),
+        0
+      );
+      if (sumCustom !== amountCents) {
+        Alert.alert("Totals mismatch", "Custom amounts must add up to expense total.");
+        return;
+      }
+    }
 
+    if (splitMode === "percentage") {
+      const pctSum = selectedIds.reduce(
+        (acc, id) => acc + toNumber(percentages[id] ?? "0"),
+        0
+      );
+      if (Math.abs(pctSum - 100) > 0.01) {
+        Alert.alert("Percent error", "Percentages must total 100%.");
+        return;
+      }
+    }
+
+    // create expense with proper payload
+    const basePayload: any = {
+      title: title.trim(),
+      totalCents: amountCents,
+      paidById: payerId,
+      participantIds: selectedIds,
+      notes: "", // optional
+      splitMode,
+    };
+
+    if (splitMode === "custom") {
+      const map: Record<string, number> = {};
+      selectedIds.forEach((id) => {
+        map[id] = toCentsFromMoneyText(customAmounts[id] ?? "0");
+      });
+      basePayload.customAmountsCents = map;
+    }
+
+    if (splitMode === "percentage") {
+      const map: Record<string, number> = {};
+      selectedIds.forEach((id) => {
+        map[id] = toNumber(percentages[id] ?? "0");
+      });
+      basePayload.percentages = map;
+    }
+
+    const expenseId = addExpense(basePayload);
     navigation.goBack();
-    
   }
 
   return (
@@ -156,21 +215,81 @@ export default function AddExpenseScreen({ navigation }: any) {
           <Text style={{ color: theme.colors.muted, fontWeight: "800", marginBottom: 10 }}>
             Split Type
           </Text>
-          <Segmented<SplitType>
+<Segmented<SplitMode>
             options={[
               { label: "Equal", value: "equal" },
               { label: "Custom", value: "custom" },
-              { label: "Percent", value: "percent" },
+              { label: "Percentage", value: "percentage" },
             ]}
-            value={splitType}
-            onChange={setSplitType}
+            value={splitMode}
+            onChange={setSplitMode}
           />
 
-          {splitType !== "equal" ? (
-            <Text style={{ marginTop: 10, color: theme.colors.muted, fontWeight: "600" }}>
-              UI coming next: for now, preview uses Equal split.
-            </Text>
-          ) : null}
+          {/* mode-specific UI */}
+          {splitMode === "custom" && selectedMembers.map((m) => (
+            <Row
+              key={m.id}
+              style={{ justifyContent: "space-between", alignItems: "center", marginTop: 10 }}
+            >
+              <Text style={{ fontWeight: "900" }}>{m.name}</Text>
+              <TextInput
+                value={customAmounts[m.id] ?? ""}
+                onChangeText={(t) => setCustomAmounts((prev) => ({ ...prev, [m.id]: t }))}
+                placeholder="$0.00"
+                keyboardType="decimal-pad"
+                style={{
+                  borderWidth: 1,
+                  borderColor: theme.colors.border,
+                  borderRadius: 12,
+                  paddingHorizontal: 8,
+                  paddingVertical: 6,
+                  fontSize: 16,
+                  fontWeight: "700",
+                  color: theme.colors.text,
+                  width: 100,
+                  textAlign: "right",
+                }}
+              />
+            </Row>
+          ))}
+
+          {splitMode === "percentage" && selectedMembers.map((m) => {
+            const pct = toNumber(percentages[m.id] ?? "0");
+            const cents = Math.round((amountCents * pct) / 100);
+            return (
+              <Row
+                key={m.id}
+                style={{ justifyContent: "space-between", alignItems: "center", marginTop: 10 }}
+              >
+                <Text style={{ fontWeight: "900" }}>{m.name}</Text>
+
+                <Row style={{ gap: 10, alignItems: "center" }}>
+                  <TextInput
+                    value={percentages[m.id] ?? ""}
+                    onChangeText={(t) => setPercentages((prev) => ({ ...prev, [m.id]: t }))}
+                    placeholder="0"
+                    keyboardType="decimal-pad"
+                    style={{
+                      borderWidth: 1,
+                      borderColor: theme.colors.border,
+                      borderRadius: 12,
+                      paddingHorizontal: 8,
+                      paddingVertical: 6,
+                      fontSize: 16,
+                      fontWeight: "700",
+                      color: theme.colors.text,
+                      width: 60,
+                      textAlign: "right",
+                    }}
+                  />
+                  <Text style={{ fontWeight: "900" }}>%</Text>
+                  <Text style={{ color: theme.colors.muted, fontWeight: "900" }}>
+                    ${dollarsFromCents(cents)}
+                  </Text>
+                </Row>
+              </Row>
+            );
+          })}
         </Card>
 
         <Card>

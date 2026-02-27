@@ -108,6 +108,9 @@ const TripContext = createContext<
         paidById: string;
         participantIds: string[];
         notes?: string;
+        splitMode: "equal" | "custom" | "percentage";
+        customAmountsCents?: Record<string, number>;
+        percentages?: Record<string, number>;
       }) => string; // returns expenseId
       togglePaid: (expenseId: string, memberId: string, paid: boolean) => void;
       deleteExpense: (expenseId: string) => void;
@@ -128,6 +131,9 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     paidById: string;
     participantIds: string[];
     notes?: string;
+    splitMode: "equal" | "custom" | "percentage";
+    customAmountsCents?: Record<string, number>;
+    percentages? : Record<string, number>;
   }) {
     const expenseId = `exp_${Math.random().toString(36).slice(2, 10)}`;
     const expense: Expense = {
@@ -139,18 +145,61 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       notes: args.notes,
     };
 
-    // Equal split (for now)
-    const n = args.participantIds.length;
-    const base = Math.floor(args.totalCents / n);
-    const rem = args.totalCents % n;
+    let splits: Split[] = [];
 
-    const splits: Split[] = args.participantIds.map((memberId, idx) => ({
-      expenseId,
-      memberId,
-      owedCents: base + (idx < rem ? 1 : 0),
-      // if payer is included, their share is considered "paid"
-      paid: memberId === args.paidById,
-    }));
+if (args.splitMode === "equal") {
+  const n = args.participantIds.length;
+  const base = Math.floor(args.totalCents / n);
+  const rem = args.totalCents % n;
+
+  splits = args.participantIds.map((memberId, idx) => ({
+    expenseId,
+    memberId,
+    owedCents: base + (idx < rem ? 1 : 0),
+    paid: memberId === args.paidById,
+  }));
+}
+
+if (args.splitMode === "custom") {
+  const map = args.customAmountsCents ?? {};
+  splits = args.participantIds.map((memberId) => ({
+    expenseId,
+    memberId,
+    owedCents: map[memberId] ?? 0,
+    paid: memberId === args.paidById,
+  }));
+}
+
+if (args.splitMode === "percentage") {
+  const pct = args.percentages ?? {};
+  const ids = args.participantIds;
+
+  // Convert % -> raw cents, then normalize rounding so total matches exactly.
+  const raw = ids.map((id) => (args.totalCents * (pct[id] ?? 0)) / 100);
+
+  const floored = raw.map((x) => Math.floor(x));
+  let remainder = args.totalCents - floored.reduce((a, b) => a + b, 0);
+
+  // Distribute leftover cents to the largest fractional parts first
+  const fracOrder = raw
+    .map((x, i) => ({ i, frac: x - Math.floor(x) }))
+    .sort((a, b) => b.frac - a.frac);
+
+  const final = [...floored];
+  for (let k = 0; k < fracOrder.length && remainder > 0; k++) {
+    final[fracOrder[k].i] += 1;
+    remainder -= 1;
+  }
+
+  splits = ids.map((memberId, idx) => ({
+    expenseId,
+    memberId,
+    owedCents: final[idx],
+    paid: memberId === args.paidById,
+  }));
+}
+
+    
 
     dispatch({ type: "ADD_EXPENSE", payload: { expense, splits } });
     return expenseId;
