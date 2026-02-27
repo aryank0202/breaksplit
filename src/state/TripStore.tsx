@@ -25,6 +25,16 @@ export type Split = {
   paid: boolean;
 };
 
+export type ItineraryItem = {
+  id: string;
+  title: string;
+  description?: string;
+  location?: string;
+  date: string;
+  time?: string;
+  createdAt: number;
+}
+
 type State = {
   trip: {
     id: string;
@@ -35,6 +45,7 @@ type State = {
   members: Member[];
   expenses: Expense[];
   splits: Split[];
+  itinerary: ItineraryItem[];
 };
 
 type Action =
@@ -49,7 +60,10 @@ type Action =
   | {
       type: "TOGGLE_SPLIT_PAID";
       payload: { expenseId: string; memberId: string; paid: boolean };
-    };
+    }
+    | { type: "ADD_ITINERARY_ITEM"; payload: ItineraryItem }
+    | { type: "DELETE_ITINERARY_ITEM"; payload: { id: string }
+  };
 
 const initialState: State = {
   trip: { id: "trip1", name: "Miami Spring Break", start: "March 8", end: "15, 2026" },
@@ -63,6 +77,7 @@ const initialState: State = {
   ],
   expenses: [],
   splits: [],
+  itinerary: [],
 };
 
 function reducer(state: State, action: Action): State {
@@ -93,6 +108,20 @@ function reducer(state: State, action: Action): State {
         };
       }
 
+      case "ADD_ITINERARY_ITEM": {
+        return {
+          ...state,
+          itinerary: [...state.itinerary, action.payload],
+        };
+      }
+
+      case "DELETE_ITINERARY_ITEM": {
+        return {
+          ...state,
+          itinerary: state.itinerary.filter(i => i.id !== action.payload.id),
+        };
+      }
+
     default:
       return state;
   }
@@ -114,12 +143,49 @@ const TripContext = createContext<
       }) => string; // returns expenseId
       togglePaid: (expenseId: string, memberId: string, paid: boolean) => void;
       deleteExpense: (expenseId: string) => void;
+      addItinerary: (args: {
+        title: string;
+        description?: string;
+        location?: string;
+        date: string;
+        time?: string;
+      }) => string;
+      deleteItinerary: (id: string) => void;
     }
   | undefined
 >(undefined);
 
 export function TripProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+
+  function addItinerary(args : {
+    title: string;
+    description?: string;
+    location?: string;
+    date: string;
+    time?: string;
+  }) {
+    const id = `iter_${Math.random().toString(36).slice(2, 10)}`;
+
+    dispatch({
+      type: "ADD_ITINERARY_ITEM",
+      payload: {
+        id,
+        title: args.title,
+        description: args.description,
+        location: args.location,
+        date: args.date,
+        time: args.time,
+        createdAt: Date.now()
+      },
+    });
+
+    return id;
+  }
+
+  function deleteItinerary(id: string) {
+    dispatch({ type: "DELETE_ITINERARY_ITEM", payload: { id }});
+  }
 
   function deleteExpense(expenseId: string) {
     dispatch({ type: "DELETE_EXPENSE", payload: { expenseId } });
@@ -209,7 +275,17 @@ if (args.splitMode === "percentage") {
     dispatch({ type: "TOGGLE_SPLIT_PAID", payload: { expenseId, memberId, paid } });
   }
 
-  const value = useMemo(() => ({ state, addExpense, togglePaid, deleteExpense}), [state]);
+  const value = useMemo(
+    () => ({
+      state,
+      addExpense,
+      togglePaid,
+      deleteExpense,
+      addItinerary,
+      deleteItinerary,
+    }),
+    [state]
+  );
 
   return <TripContext.Provider value={value}>{children}</TripContext.Provider>;
 }

@@ -1,260 +1,148 @@
 import React, { useMemo, useState } from "react";
-import {
-  View,
-  Text,
-  Pressable,
-  FlatList,
-  ScrollView,
-} from "react-native";
+import { View, Text, TextInput, Pressable, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
 import Card from "../components/Card";
 import Row from "../components/Row";
+import { useTrip } from "../state/TripStore";
 
-type Day = { id: string; label: string };
-
-type ItineraryItem = {
-  id: string;
-  dayId: string;
-  time: string;
-  title: string;
-  location: string;
-  note?: string;
-};
-
-const days: Day[] = [
-  { id: "day1", label: "Day 1" },
-  { id: "day2", label: "Day 2" },
-  { id: "day3", label: "Day 3" },
-  { id: "day4", label: "Day 4" },
-  { id: "day5", label: "Day 5" },
-];
-
-const mockItems: ItineraryItem[] = [
-  {
-    id: "1",
-    dayId: "day1",
-    time: "10:00 AM",
-    title: "Arrival & Check-in",
-    location: "The Setai Miami Beach",
-    note: "Front desk confirmation #2847",
-  },
-  {
-    id: "2",
-    dayId: "day1",
-    time: "2:00 PM",
-    title: "Lunch at Joe's Stone Crab",
-    location: "11 Washington Ave",
-  },
-  {
-    id: "3",
-    dayId: "day1",
-    time: "7:00 PM",
-    title: "Sunset at South Beach",
-    location: "Ocean Drive",
-    note: "Bring cameras!",
-  },
-];
-
-function DayChip({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => ({
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderRadius: 14,
-        backgroundColor: active ? theme.colors.primary : theme.colors.surface,
-        borderWidth: 1,
-        borderColor: active ? theme.colors.primary : theme.colors.border,
-        opacity: pressed ? 0.9 : 1,
-        minWidth: 74,
-        alignItems: "center",
-      })}
-    >
-      <Text style={{ fontWeight: "900", color: active ? "white" : theme.colors.text }}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function TimelineDot() {
-  return (
-    <View
-      style={{
-        width: 10,
-        height: 10,
-        borderRadius: 999,
-        backgroundColor: theme.colors.primary,
-        marginTop: 18,
-      }}
-    />
-  );
-}
-
-function TimelineLine() {
-  return (
-    <View
-      style={{
-        width: 2,
-        flex: 1,
-        backgroundColor: "#E5E7EB",
-        marginLeft: 4,
-        marginTop: 6,
-      }}
-    />
-  );
-}
-
-export default function ItineraryDayScreen({ navigation }: any) {
+export default function AddItineraryItemScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
+  const { addItinerary, state } = useTrip();
 
-  const [activeDayId, setActiveDayId] = useState<string>("day1");
+  // default date: today in trip context or passed in
+  const defaultDate = route?.params?.date ?? new Date().toISOString().slice(0, 10);
 
-  const items = useMemo(
-    () => mockItems.filter((x) => x.dayId === activeDayId),
-    [activeDayId]
-  );
+  const [title, setTitle] = useState("");
+  const [location, setLocation] = useState("");
+  const [time, setTime] = useState(""); // "7:00 PM" or "19:00" (we'll keep free-form for now)
+  const [description, setDescription] = useState("");
+  const [date, setDate] = useState(defaultDate);
+
+  const canSave = useMemo(() => title.trim().length > 0 && date.trim().length > 0, [title, date]);
+
+  function onSave() {
+    if (!title.trim()) {
+      Alert.alert("Missing title", "Please enter an activity title.");
+      return;
+    }
+    if (!date.trim()) {
+      Alert.alert("Missing date", "Please enter a date (YYYY-MM-DD).");
+      return;
+    }
+
+    addItinerary({
+      title: title.trim(),
+      location: location.trim() || undefined,
+      time: time.trim() || undefined,
+      description: description.trim() || undefined,
+      date: date.trim(),
+    });
+
+    navigation.goBack();
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
-      {/* Custom header (so it looks like your screenshot) */}
-      <View
-        style={{
-          paddingTop: insets.top + 6,
-          paddingHorizontal: 14,
-          paddingBottom: 10,
-          backgroundColor: theme.colors.bg,
-        }}
-      >
-        <Row style={{ gap: 10 }}>
+      {/* Header */}
+      <View style={{ paddingTop: insets.top + 6, paddingHorizontal: 14, paddingBottom: 10 }}>
+        <Row style={{ gap: 10, alignItems: "center" }}>
           <Pressable
             onPress={() => navigation.goBack()}
-            style={({ pressed }) => ({
-              padding: 10,
-              borderRadius: 12,
-              opacity: pressed ? 0.9 : 1,
-            })}
+            style={({ pressed }) => ({ padding: 10, borderRadius: 12, opacity: pressed ? 0.9 : 1 })}
           >
-            <Text style={{ fontSize: 18, fontWeight: "900", color: theme.colors.primary }}>
-              ‹
-            </Text>
+            <Text style={{ fontSize: 18, fontWeight: "900", color: theme.colors.primary }}>‹</Text>
           </Pressable>
 
           <Text style={{ fontSize: 22, fontWeight: "900", color: theme.colors.text }}>
-            Itinerary
+            Add Itinerary Item
           </Text>
         </Row>
-
-        {/* Day selector */}
-        <View style={{ marginTop: 14 }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={{ flexDirection: "row", gap: 10, paddingHorizontal: 6 }}>
-              {days.map((d) => (
-                <DayChip
-                  key={d.id}
-                  label={d.label}
-                  active={d.id === activeDayId}
-                  onPress={() => setActiveDayId(d.id)}
-                />
-              ))}
-            </View>
-          </ScrollView>
-        </View>
       </View>
 
-      {/* Timeline list */}
-      <FlatList
-        contentContainerStyle={{ padding: 20, paddingBottom: 120 }}
-        data={items}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={{ flexDirection: "row", gap: 12, marginBottom: 18 }}>
-            {/* Timeline rail */}
-            <View style={{ alignItems: "center", width: 16 }}>
-              <TimelineDot />
-              <TimelineLine />
+      <View style={{ padding: 20, gap: 14 }}>
+        <Card>
+          <Text style={{ fontWeight: "900", color: theme.colors.muted }}>Title</Text>
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            placeholder="e.g., Lunch at Joe's"
+            placeholderTextColor="#9CA3AF"
+            style={{ marginTop: 10, fontSize: 16, fontWeight: "800", color: theme.colors.text }}
+          />
+        </Card>
+
+        <Card>
+          <Row style={{ gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: "900", color: theme.colors.muted }}>Date</Text>
+              <TextInput
+                value={date}
+                onChangeText={setDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="none"
+                style={{ marginTop: 10, fontSize: 16, fontWeight: "800", color: theme.colors.text }}
+              />
             </View>
 
-            {/* Event card */}
-            <Card style={{ flex: 1, padding: 16 }}>
-              <Text style={{ color: theme.colors.muted, fontWeight: "800" }}>
-                {item.time}
-              </Text>
+            <View style={{ width: 120 }}>
+              <Text style={{ fontWeight: "900", color: theme.colors.muted }}>Time</Text>
+              <TextInput
+                value={time}
+                onChangeText={setTime}
+                placeholder="7:00 PM"
+                placeholderTextColor="#9CA3AF"
+                style={{ marginTop: 10, fontSize: 16, fontWeight: "800", color: theme.colors.text }}
+              />
+            </View>
+          </Row>
+        </Card>
 
-              <Text
-                style={{
-                  marginTop: 6,
-                  fontSize: 18,
-                  fontWeight: "900",
-                  color: theme.colors.text,
-                }}
-              >
-                {item.title}
-              </Text>
+        <Card>
+          <Text style={{ fontWeight: "900", color: theme.colors.muted }}>Location</Text>
+          <TextInput
+            value={location}
+            onChangeText={setLocation}
+            placeholder="e.g., South Beach"
+            placeholderTextColor="#9CA3AF"
+            style={{ marginTop: 10, fontSize: 16, fontWeight: "800", color: theme.colors.text }}
+          />
+        </Card>
 
-              <Text style={{ marginTop: 8, color: theme.colors.muted, fontWeight: "700" }}>
-                {item.location}
-              </Text>
+        <Card>
+          <Text style={{ fontWeight: "900", color: theme.colors.muted }}>Notes</Text>
+          <TextInput
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Optional details..."
+            placeholderTextColor="#9CA3AF"
+            multiline
+            style={{
+              marginTop: 10,
+              minHeight: 90,
+              fontSize: 15,
+              fontWeight: "700",
+              color: theme.colors.text,
+            }}
+          />
+        </Card>
+      </View>
 
-              {item.note ? (
-                <View
-                  style={{
-                    marginTop: 12,
-                    backgroundColor: theme.colors.surface,
-                    borderRadius: 12,
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    borderWidth: 1,
-                    borderColor: theme.colors.border,
-                  }}
-                >
-                  <Text style={{ color: theme.colors.muted, fontWeight: "700" }}>
-                    {item.note}
-                  </Text>
-                </View>
-              ) : null}
-            </Card>
-          </View>
-        )}
-      />
-
-      {/* Floating + button */}
-      <View
-        style={{
-          position: "absolute",
-          right: 18,
-          bottom: 18 + insets.bottom,
-        }}
-      >
+      {/* Save button */}
+      <View style={{ position: "absolute", left: 20, right: 20, bottom: 20 + insets.bottom }}>
         <Pressable
-          onPress={() => {}}
+          onPress={onSave}
+          disabled={!canSave}
           style={({ pressed }) => ({
-            width: 58,
-            height: 58,
-            borderRadius: 999,
-            backgroundColor: theme.colors.primary,
+            backgroundColor: canSave ? theme.colors.primary : "#CBD5E1",
+            paddingVertical: 16,
+            borderRadius: 16,
             alignItems: "center",
-            justifyContent: "center",
             opacity: pressed ? 0.9 : 1,
-            shadowColor: "#000",
-            shadowOpacity: 0.18,
-            shadowRadius: 10,
-            shadowOffset: { width: 0, height: 6 },
           })}
         >
-          <Text style={{ color: "white", fontSize: 30, fontWeight: "900", marginTop: -2 }}>
-            +
-          </Text>
+          <Text style={{ color: "white", fontWeight: "900", fontSize: 16 }}>Save</Text>
         </Pressable>
       </View>
     </View>
