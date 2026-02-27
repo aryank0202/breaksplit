@@ -79,7 +79,7 @@ export default function AddItineraryItemScreen({ navigation, route }: any) {
               <TextInput
                 value={date}
                 onChangeText={setDate}
-                placeholder="YYYY-MM-DD"
+                placeholder="MM-DD-YYYY"
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
                 style={{ marginTop: 10, fontSize: 16, fontWeight: "800", color: theme.colors.text }}
