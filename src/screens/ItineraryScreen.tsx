@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import { Feather } from "@expo/vector-icons";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
@@ -21,30 +21,17 @@ type ActivityItem = {
 
 const Tab = createMaterialTopTabNavigator();
 
-const mockActivity: ActivityItem[] = [
-  {
-    id: "1",
-    initials: "S",
-    color: "#A855F7",
-    title: "Sarah added Dinner at Ocean Drive",
-    subtitle: "2h ago",
-  },
-  {
-    id: "2",
-    initials: "M",
-    color: "#3B82F6",
-    title: "Mike paid for Uber to South Beach",
-    subtitle: "5h ago",
-    amount: "$28.50",
-  },
-  {
-    id: "3",
-    initials: "E",
-    color: "#EC4899",
-    title: "Emma updated Day 3 itinerary",
-    subtitle: "1d ago",
-  },
-];
+function timeAgo(ms: number) {
+  const diff = Date.now() - ms;
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (diff < minute) return "just now";
+  if (diff < hour) return `${Math.floor(diff / minute)}m ago`;
+  if (diff < day) return `${Math.floor(diff / hour)}h ago`;
+  return `${Math.floor(diff / day)}d ago`;
+}
 
 function PrimaryButton({
   label,
@@ -124,6 +111,36 @@ function ItineraryTabContent({ navigation }: any) {
   const youOwe = centsToDollars(youOweCents);
   const youreOwed = centsToDollars(youreOwedCents);
 
+  const recentActivity = useMemo<ActivityItem[]>(() => {
+    const expenseActivity: (ActivityItem & { createdAt: number })[] = state.expenses.map((expense) => {
+      const actor = state.members.find((m) => m.id === expense.paidById);
+      const actorName = actor?.id === "me" ? "You" : actor?.name ?? "Someone";
+      return {
+        id: `expense_${expense.id}`,
+        initials: actor?.initials ?? "??",
+        color: actor?.color ?? "#94A3B8",
+        title: `${actorName} added expense ${expense.title}`,
+        subtitle: timeAgo(expense.createdAt),
+        amount: centsToDollars(expense.totalCents),
+        createdAt: expense.createdAt,
+      };
+    });
+
+    const itineraryActivity: (ActivityItem & { createdAt: number })[] = state.itinerary.map((item) => ({
+      id: `itinerary_${item.id}`,
+      initials: "ME",
+      color: "#3B82F6",
+      title: `You added itinerary item ${item.title}`,
+      subtitle: timeAgo(item.createdAt),
+      createdAt: item.createdAt,
+    }));
+
+    return [...expenseActivity, ...itineraryActivity]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, 12)
+      .map(({ createdAt, ...activity }) => activity);
+  }, [state.expenses, state.itinerary, state.members]);
+
   return (
     <View style={styles.screen}>
       <FlatList
@@ -163,8 +180,13 @@ function ItineraryTabContent({ navigation }: any) {
             </Text>
           </View>
         }
-        data={mockActivity}
+        data={recentActivity}
         keyExtractor={(item) => item.id}
+        ListEmptyComponent={
+          <Text style={{ marginHorizontal: 20, marginTop: 8, color: theme.colors.muted }}>
+            No activity yet.
+          </Text>
+        }
         renderItem={({ item }) => (
           <Card style={{ marginTop: 12, marginHorizontal: 20 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
