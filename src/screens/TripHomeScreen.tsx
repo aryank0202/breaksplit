@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,7 +17,7 @@ type Trip = {
   owedColor: string;
 };
 
-const trips: Trip[] = [
+const initialTrips: Trip[] = [
   {
     id: "1",
     title: "Miami Spring Break",
@@ -96,15 +96,28 @@ function TripCard({ trip, onPress }: { trip: Trip; onPress: () => void }) {
   );
 }
 
-export default function TripHomeScreen({ navigation }: any) {
+export default function TripHomeScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
+  const [trips, setTrips] = useState<Trip[]>(initialTrips);
+
+  useEffect(() => {
+    const incomingTrip: Trip | undefined = route?.params?.newTrip;
+    if (!incomingTrip) return;
+
+    setTrips((prev) => {
+      if (prev.some((trip) => trip.id === incomingTrip.id)) return prev;
+      return [incomingTrip, ...prev];
+    });
+
+    navigation.setParams({ newTrip: undefined });
+  }, [navigation, route?.params?.newTrip]);
 
   return (
     <View style={styles.screen}>
       <View style={[styles.headerWrap, { paddingTop: insets.top + 8 }]}>
         <View>
           <Text style={styles.headerTitle}>My Trips</Text>
-          <Text style={styles.headerSub}>3 active trips</Text>
+          <Text style={styles.headerSub}>{trips.length} active trips</Text>
         </View>
         <View style={styles.profileIcon}>
           <Feather name="user" size={18} color={theme.colors.muted} />
@@ -112,7 +125,7 @@ export default function TripHomeScreen({ navigation }: any) {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <Pressable style={styles.createButton}>
+        <Pressable style={styles.createButton} onPress={() => navigation.navigate("CreateTrip")}>
           <Text style={styles.createButtonText}>+ Create New Trip</Text>
         </Pressable>
 

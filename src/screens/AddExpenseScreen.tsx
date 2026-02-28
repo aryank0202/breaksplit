@@ -139,7 +139,7 @@ export default function AddExpenseScreen({ navigation }: any) {
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <View style={{ padding: 20, paddingBottom: 40, gap: 14 }}>
-        <Text style={{ fontSize: 26, fontWeight: "900", color: theme.colors.text }}>
+        <Text style={{ fontSize: 20, fontWeight: "900", color: theme.colors.text }}>
           Add Expense
         </Text>
 
