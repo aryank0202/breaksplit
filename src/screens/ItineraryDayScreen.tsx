@@ -1,7 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { Feather } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,31 +24,6 @@ type TimelineItem = {
   note?: string;
 };
 
-const fallbackTimeline: TimelineItem[] = [
-  {
-    id: "a1",
-    time: "10:00 AM",
-    title: "Arrival & Check-in",
-    location: "The Setai Miami Beach",
-    note: "Front desk confirmation #2847",
-  },
-  {
-    id: "a2",
-    time: "2:00 PM",
-    title: "Lunch at Joe's Stone Crab",
-    location: "11 Washington Ave",
-  },
-  {
-    id: "a3",
-    time: "7:00 PM",
-    title: "Sunset at South Beach",
-    location: "Ocean Drive",
-    note: "Bring cameras!",
-  },
-];
-
-const dayTabs = ["Day 1", "Day 2", "Day 3", "Day 4"];
-
 function dateForTripDay(dayIndex: number) {
   const base = new Date(2026, 2, 8); // March 8, 2026
   const current = new Date(base);
@@ -61,23 +39,58 @@ function normalizeTime(value?: string) {
   return value.trim();
 }
 
+function formatTime(date: Date) {
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function timeToMinutes(value?: string) {
+  if (!value) return Number.MAX_SAFE_INTEGER;
+  const v = value.trim().toUpperCase();
+  const match = v.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+
+  let hour = parseInt(match[1], 10);
+  const minute = parseInt(match[2], 10);
+  const period = match[3];
+
+  if (period === "AM") {
+    if (hour === 12) hour = 0;
+  } else if (hour !== 12) {
+    hour += 12;
+  }
+
+  return hour * 60 + minute;
+}
+
 export default function ItineraryDayScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { state, addItinerary } = useTrip();
+  const { state, addItinerary, deleteItinerary } = useTrip();
   const [selectedDay, setSelectedDay] = useState(0);
+  const [dayCount, setDayCount] = useState(4);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newTime, setNewTime] = useState("");
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [newTime, setNewTime] = useState<Date | null>(null);
+  const [draftTime, setDraftTime] = useState<Date>(new Date());
   const [newTitle, setNewTitle] = useState("");
   const [newLocation, setNewLocation] = useState("");
   const [newNotes, setNewNotes] = useState("");
 
+  const dayTabs = useMemo(
+    () => Array.from({ length: dayCount }, (_, i) => `Day ${i + 1}`),
+    [dayCount]
+  );
   const selectedDate = useMemo(() => dateForTripDay(selectedDay), [selectedDay]);
   const canSave = newTitle.trim().length > 0;
 
   const timelineItems = useMemo(() => {
     const fromStore = state.itinerary
       .filter((item) => item.date === selectedDate)
-      .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""))
+      .sort((a, b) => {
+        const aMinutes = timeToMinutes(a.time);
+        const bMinutes = timeToMinutes(b.time);
+        if (aMinutes !== bMinutes) return aMinutes - bMinutes;
+        return a.createdAt - b.createdAt;
+      })
       .map((item) => ({
         id: item.id,
         time: normalizeTime(item.time),
@@ -86,14 +99,16 @@ export default function ItineraryDayScreen({ navigation }: any) {
         note: item.description,
       }));
 
-    return fromStore.length > 0 ? fromStore : selectedDay === 0 ? fallbackTimeline : [];
+    return fromStore;
   }, [selectedDate, selectedDay, state.itinerary]);
 
   function resetModalForm() {
-    setNewTime("");
+    setNewTime(null);
+    setDraftTime(new Date());
     setNewTitle("");
     setNewLocation("");
     setNewNotes("");
+    setShowTimePicker(false);
   }
 
   function closeModal() {
@@ -106,13 +121,21 @@ export default function ItineraryDayScreen({ navigation }: any) {
 
     addItinerary({
       title: newTitle.trim(),
-      time: newTime.trim() || undefined,
+      time: newTime ? formatTime(newTime) : undefined,
       location: newLocation.trim() || undefined,
       description: newNotes.trim() || undefined,
       date: selectedDate,
     });
 
     closeModal();
+  }
+
+  function onPressAddDay() {
+    setDayCount((prev) => {
+      const nextIndex = prev;
+      setSelectedDay(nextIndex);
+      return prev + 1;
+    });
   }
 
   return (
@@ -140,6 +163,10 @@ export default function ItineraryDayScreen({ navigation }: any) {
               </Pressable>
             );
           })}
+          <Pressable onPress={onPressAddDay} style={styles.addDayPill}>
+            <Feather name="plus" size={14} color={theme.colors.primary} />
+            <Text style={styles.addDayLabel}>Day</Text>
+          </Pressable>
         </ScrollView>
 
         <View style={styles.scrollTrack}>
@@ -160,9 +187,14 @@ export default function ItineraryDayScreen({ navigation }: any) {
             </View>
 
             <View style={styles.eventCard}>
-              <View style={styles.metaRow}>
-                <Feather name="clock" size={15} color="#94A3B8" />
-                <Text style={styles.timeText}>{item.time}</Text>
+              <View style={styles.eventTopRow}>
+                <View style={styles.metaRow}>
+                  <Feather name="clock" size={15} color="#94A3B8" />
+                  <Text style={styles.timeText}>{item.time}</Text>
+                </View>
+                <Pressable onPress={() => deleteItinerary(item.id)} hitSlop={8} style={styles.deleteButton}>
+                  <Feather name="trash-2" size={15} color="#EF4444" />
+                </Pressable>
               </View>
 
               <Text style={styles.eventTitle}>{item.title}</Text>
@@ -192,8 +224,16 @@ export default function ItineraryDayScreen({ navigation }: any) {
         animationType="slide"
         onRequestClose={closeModal}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <View style={[styles.modalSheet, { paddingBottom: Math.max(insets.bottom, 14) }]}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.modalContent}
+              showsVerticalScrollIndicator={false}
+            >
             <View style={styles.modalHeaderRow}>
               <Text style={styles.modalTitle}>Add Event</Text>
               <Pressable onPress={closeModal} style={styles.closeCircle}>
@@ -207,16 +247,46 @@ export default function ItineraryDayScreen({ navigation }: any) {
             </View>
 
             <Text style={styles.fieldLabel}>Time</Text>
-            <View style={styles.inputShell}>
+            <Pressable
+              onPress={() => {
+                setDraftTime(newTime ?? new Date());
+                setShowTimePicker(true);
+              }}
+              style={styles.inputShell}
+            >
               <Feather name="clock" size={18} color="#9CA3AF" />
-              <TextInput
-                value={newTime}
-                onChangeText={setNewTime}
-                placeholder="--:-- --"
-                placeholderTextColor="#9CA3AF"
-                style={styles.inputText}
-              />
-            </View>
+              <Text style={[styles.inputText, !newTime ? styles.placeholderText : null]}>
+                {newTime ? formatTime(newTime) : "--:-- --"}
+              </Text>
+            </Pressable>
+            {showTimePicker ? (
+              <View style={styles.pickerWrap}>
+                <DateTimePicker
+                  value={draftTime}
+                  mode="time"
+                  display="spinner"
+                  textColor="#111827"
+                  themeVariant="light"
+                  onChange={(_, selected) => {
+                    if (selected) setDraftTime(selected);
+                  }}
+                />
+                <View style={styles.pickerActions}>
+                  <Pressable onPress={() => setShowTimePicker(false)} style={styles.pickerActionButton}>
+                    <Text style={styles.pickerActionText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      setNewTime(draftTime);
+                      setShowTimePicker(false);
+                    }}
+                    style={styles.pickerActionButton}
+                  >
+                    <Text style={[styles.pickerActionText, { color: theme.colors.primary }]}>Set Time</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
 
             <Text style={styles.fieldLabel}>Event Title</Text>
             <View style={styles.inputShell}>
@@ -267,8 +337,9 @@ export default function ItineraryDayScreen({ navigation }: any) {
             <Pressable onPress={closeModal} style={styles.secondaryModalButton}>
               <Text style={styles.secondaryModalButtonText}>Cancel</Text>
             </Pressable>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -300,6 +371,7 @@ const styles = StyleSheet.create({
   dayTabs: {
     gap: 10,
     paddingRight: 24,
+    alignItems: "center",
   },
   dayPill: {
     paddingHorizontal: 20,
@@ -323,6 +395,22 @@ const styles = StyleSheet.create({
   },
   dayLabelInactive: {
     color: "#475569",
+  },
+  addDayPill: {
+    height: 36,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    backgroundColor: "#EFF6FF",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  addDayLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: theme.colors.primary,
   },
   scrollTrack: {
     marginTop: 8,
@@ -383,6 +471,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
+  eventTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  deleteButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FEF2F2",
+  },
   timeText: {
     color: "#64748B",
     fontWeight: "500",
@@ -440,6 +541,10 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 18,
     paddingTop: 16,
     paddingHorizontal: 16,
+    maxHeight: "92%",
+  },
+  modalContent: {
+    paddingBottom: 4,
   },
   modalHeaderRow: {
     flexDirection: "row",
@@ -499,6 +604,34 @@ const styles = StyleSheet.create({
     color: "#1F2937",
     fontSize: 14,
     paddingVertical: 0,
+  },
+  placeholderText: {
+    color: "#9CA3AF",
+  },
+  pickerWrap: {
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    backgroundColor: "white",
+    overflow: "hidden",
+  },
+  pickerActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingBottom: 10,
+  },
+  pickerActionButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  pickerActionText: {
+    color: "#6B7280",
+    fontSize: 13,
+    fontWeight: "700",
   },
   notesShell: {
     minHeight: 92,
