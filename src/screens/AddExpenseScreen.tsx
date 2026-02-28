@@ -28,6 +28,28 @@ function centsToDollars(cents: number) {
   return (cents / 100).toFixed(2);
 }
 
+function sanitizeAmountInput(input: string) {
+  const cleaned = input.replace(/[^\d.]/g, "");
+  if (!cleaned) return "";
+
+  const hasDot = cleaned.includes(".");
+  const parts = cleaned.split(".");
+  const leftRaw = parts[0] ?? "";
+  const rightRaw = parts.slice(1).join("");
+
+  const left = leftRaw.slice(0, 4);
+  if (!hasDot) return left;
+
+  const normalizedLeft = left.length === 0 ? "0" : left;
+  const right = rightRaw.slice(0, 2);
+
+  if (cleaned.endsWith(".") && right.length === 0) {
+    return `${normalizedLeft}.`;
+  }
+
+  return `${normalizedLeft}.${right}`;
+}
+
 export default function AddExpenseScreen({ navigation }: any) {
   const { state, addExpense } = useTrip();
   const [title, setTitle] = useState("");
@@ -173,10 +195,11 @@ export default function AddExpenseScreen({ navigation }: any) {
             <Text style={{ fontSize: 22, fontWeight: "900" }}>$</Text>
             <TextInput
               value={amount}
-              onChangeText={setAmount}
+              onChangeText={(t) => setAmount(sanitizeAmountInput(t))}
               placeholder="0.00"
               placeholderTextColor="#9CA3AF"
               keyboardType="decimal-pad"
+              maxLength={7}
               style={{
                 flex: 1,
                 borderWidth: 1,
