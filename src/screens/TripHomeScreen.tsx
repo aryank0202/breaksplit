@@ -119,9 +119,9 @@ export default function TripHomeScreen({ navigation, route }: any) {
           <Text style={styles.headerTitle}>My Trips</Text>
           <Text style={styles.headerSub}>{trips.length} active trips</Text>
         </View>
-        <View style={styles.profileIcon}>
+        <Pressable onPress={() => navigation.navigate("Profile")} style={styles.profileIcon}>
           <Feather name="user" size={18} color={theme.colors.muted} />
-        </View>
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>

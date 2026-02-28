@@ -4,6 +4,9 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import TripHomeScreen from "../screens/TripHomeScreen";
 import CreateTripScreen from "../screens/CreateTripScreen";
+import LoginScreen from "../screens/LoginScreen";
+import SignUpScreen from "../screens/SignUpScreen";
+import ProfileScreen from "../screens/ProfileScreen";
 import ItineraryScreen from "../screens/ItineraryScreen";
 import AddExpenseScreen from "../screens/AddExpenseScreen";
 import ItineraryDayScreen from "../screens/ItineraryDayScreen";
@@ -14,7 +17,17 @@ const Stack = createNativeStackNavigator();
 export default function AppNavigator() {
   return (
     <NavigationContainer>
-      <Stack.Navigator>
+      <Stack.Navigator initialRouteName="Login">
+        <Stack.Screen
+          name="Login"
+          component={LoginScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="SignUp"
+          component={SignUpScreen}
+          options={{ headerShown: false }}
+        />
         <Stack.Screen
           name="TripHome"
           component={TripHomeScreen}
@@ -28,6 +41,11 @@ export default function AppNavigator() {
         <Stack.Screen
           name="CreateTrip"
           component={CreateTripScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="Profile"
+          component={ProfileScreen}
           options={{ headerShown: false }}
         />
         <Stack.Screen
