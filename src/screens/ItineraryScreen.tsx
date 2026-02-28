@@ -5,6 +5,7 @@ import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Avatar from "../components/Avatar";
 import Card from "../components/Card";
+import { centsToDollars, useTrip } from "../state/TripStore";
 import ExpensesScreen from "./ExpensesScreen";
 import MembersScreen from "./MembersScreen";
 import { theme } from "../theme";
@@ -98,8 +99,30 @@ function OutlineButton({
 }
 
 function ItineraryTabContent({ navigation }: any) {
-  const youOwe = "$42.18";
-  const youreOwed = "$87.50";
+  const { state } = useTrip();
+
+  function sum(nums: number[]) {
+    return nums.reduce((a, b) => a + b, 0);
+  }
+
+  const youOweCents = sum(
+    state.splits
+      .filter((s) => s.memberId === "me" && !s.paid)
+      .map((s) => s.owedCents)
+  );
+
+  const youreOwedCents = sum(
+    state.splits
+      .filter((s) => s.memberId !== "me" && !s.paid)
+      .filter((s) => {
+        const exp = state.expenses.find((e) => e.id === s.expenseId);
+        return exp?.paidById === "me";
+      })
+      .map((s) => s.owedCents)
+  );
+
+  const youOwe = centsToDollars(youOweCents);
+  const youreOwed = centsToDollars(youreOwedCents);
 
   return (
     <View style={styles.screen}>
