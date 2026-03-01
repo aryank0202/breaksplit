@@ -1,142 +1,174 @@
-import React, { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
+import { useTrip } from "../state/TripStore";
+import { computeTotals, listExpenses } from "../api/expenses";
+import { getTrip, listMembers } from "../api/trips";
+import { formatCents } from "../utils/money";
+import { listRecentItineraryItems } from "../api/itinerary";
 
-type Trip = {
+type ActivityRow = {
   id: string;
-  title: string;
-  location: string;
-  dates: string;
-  members: string;
-  youOwe: string;
-  youreOwed: string;
-  headerColor: string;
-  oweColor: string;
-  owedColor: string;
+  text: string;
+  amount?: string;
+  createdAtMs: number;
 };
 
-const initialTrips: Trip[] = [
-  {
-    id: "1",
-    title: "Miami Spring Break",
-    location: "Miami, FL",
-    dates: "Mar 8-15, 2026",
-    members: "6 members",
-    youOwe: "$42.18",
-    youreOwed: "$87.50",
-    headerColor: "#1290F6",
-    oweColor: "#FF2A2A",
-    owedColor: "#00A63E",
-  },
-  {
-    id: "2",
-    title: "Cabo Beach Week",
-    location: "Cabo San Lucas, MX",
-    dates: "Apr 2-9, 2026",
-    members: "8 members",
-    youOwe: "$0.00",
-    youreOwed: "$125.00",
-    headerColor: "#FF5B00",
-    oweColor: "#94A3B8",
-    owedColor: "#00A63E",
-  },
-  {
-    id: "3",
-    title: "Lake Tahoe Weekend",
-    location: "Lake Tahoe, CA",
-    dates: "May 15-18, 2026",
-    members: "4 members",
-    youOwe: "$75.00",
-    youreOwed: "$0.00",
-    headerColor: "#00C060",
-    oweColor: "#FF2A2A",
-    owedColor: "#94A3B8",
-  },
-];
-
-function TripCard({ trip, onPress }: { trip: Trip; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={styles.card}>
-      <View style={[styles.cardHeader, { backgroundColor: trip.headerColor }]}>
-        <Text style={styles.tripTitle}>{trip.title}</Text>
-        <View style={styles.infoWithIcon}>
-          <Feather name="map-pin" size={13} color="white" />
-          <Text style={styles.tripLocation}>{trip.location}</Text>
-        </View>
-      </View>
-
-      <View style={styles.cardBody}>
-        <View style={styles.metaRow}>
-          <View style={styles.infoWithIcon}>
-            <Feather name="calendar" size={13} color="#334155" />
-            <Text style={styles.metaText}>{trip.dates}</Text>
-          </View>
-          <View style={styles.infoWithIcon}>
-            <Feather name="users" size={13} color="#334155" />
-            <Text style={styles.metaText}>{trip.members}</Text>
-          </View>
-        </View>
-
-        <View style={styles.divider} />
-
-        <View style={styles.balanceRow}>
-          <View>
-            <Text style={styles.balanceLabel}>You Owe</Text>
-            <Text style={[styles.balanceValue, { color: trip.oweColor }]}>{trip.youOwe}</Text>
-          </View>
-          <View>
-            <Text style={styles.balanceLabel}>You're Owed</Text>
-            <Text style={[styles.balanceValue, { color: trip.owedColor }]}>{trip.youreOwed}</Text>
-          </View>
-        </View>
-      </View>
-    </Pressable>
-  );
+function formatDateRange(startDate: string, endDate: string) {
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  return `${start.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })} - ${end.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
 }
 
-export default function TripHomeScreen({ navigation, route }: any) {
+function toneFromAmount(value: number) {
+  if (value > 0) return "#EF4444";
+  return "#94A3B8";
+}
+
+export default function TripHomeScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
-  const [trips, setTrips] = useState<Trip[]>(initialTrips);
+  const { selectedTripId, selectedTrip, setSelectedTrip, currentUser } = useTrip();
+  const [loading, setLoading] = useState(true);
+  const [memberCount, setMemberCount] = useState(0);
+  const [youOweCents, setYouOweCents] = useState(0);
+  const [youreOwedCents, setYoureOwedCents] = useState(0);
+  const [activity, setActivity] = useState<ActivityRow[]>([]);
 
   useEffect(() => {
-    const incomingTrip: Trip | undefined = route?.params?.newTrip;
-    if (!incomingTrip) return;
+    if (!selectedTripId) {
+      navigation.replace("CreateTrip");
+      return;
+    }
+    const tripId = selectedTripId;
+    async function load() {
+      try {
+        setLoading(true);
+        const trip = await getTrip(tripId);
+        if (!trip) {
+          navigation.replace("CreateTrip");
+          return;
+        }
+        setSelectedTrip({
+          id: trip.id,
+          name: trip.name,
+          startDate: trip.startDate,
+          endDate: trip.endDate,
+          timezone: trip.timezone,
+        });
 
-    setTrips((prev) => {
-      if (prev.some((trip) => trip.id === incomingTrip.id)) return prev;
-      return [incomingTrip, ...prev];
-    });
+        const [members, expenses, itineraryRows] = await Promise.all([
+          listMembers(tripId),
+          listExpenses(tripId),
+          listRecentItineraryItems(tripId, trip.startDate, trip.endDate, 6),
+        ]);
 
-    navigation.setParams({ newTrip: undefined });
-  }, [navigation, route?.params?.newTrip]);
+        setMemberCount(members.length);
+        const adjustedTotals = await computeTotals(tripId, currentUser?.uid ?? trip.createdBy);
+        setYouOweCents(adjustedTotals.youOweCents);
+        setYoureOwedCents(adjustedTotals.youreOwedCents);
+
+        const expenseActivity: ActivityRow[] = expenses.slice(0, 6).map((expense) => ({
+          id: `exp_${expense.id}`,
+          text: `Expense added: ${expense.title}`,
+          amount: formatCents(expense.amountCents),
+          createdAtMs: expense.createdAtMs,
+        }));
+
+        const itineraryActivity: ActivityRow[] = itineraryRows.map((row) => ({
+          id: `it_${row.id}`,
+          text: `Itinerary item: ${row.title} (${row.dayId})`,
+          createdAtMs: row.createdAtMs,
+        }));
+
+        setActivity([...expenseActivity, ...itineraryActivity].sort((a, b) => b.createdAtMs - a.createdAtMs).slice(0, 10));
+      } catch (error: any) {
+        Alert.alert("Load failed", error?.message ?? "Could not load trip.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    void load();
+  }, [currentUser?.uid, navigation, selectedTripId, setSelectedTrip]);
+
+  const dateText = useMemo(() => {
+    if (!selectedTrip) return "";
+    return formatDateRange(selectedTrip.startDate, selectedTrip.endDate);
+  }, [selectedTrip]);
 
   return (
     <View style={styles.screen}>
       <View style={[styles.headerWrap, { paddingTop: insets.top + 8 }]}>
         <View>
-          <Text style={styles.headerTitle}>My Trips</Text>
-          <Text style={styles.headerSub}>{trips.length} active trips</Text>
+          <Text style={styles.headerTitle}>Trip Home</Text>
+          <Text style={styles.headerSub}>
+            {selectedTrip ? `${selectedTrip.name}` : "No trip selected"}
+          </Text>
         </View>
         <Pressable onPress={() => navigation.navigate("Profile")} style={styles.profileIcon}>
           <Feather name="user" size={18} color={theme.colors.muted} />
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <Pressable style={styles.createButton} onPress={() => navigation.navigate("CreateTrip")}>
-          <Text style={styles.createButtonText}>+ Create New Trip</Text>
-        </Pressable>
+      <FlatList
+        contentContainerStyle={styles.content}
+        data={activity}
+        keyExtractor={(item) => item.id}
+        ListHeaderComponent={
+          <View style={{ gap: 14 }}>
+            <View style={styles.card}>
+              <Text style={styles.tripTitle}>{selectedTrip?.name ?? "Loading..."}</Text>
+              <Text style={styles.metaText}>{dateText}</Text>
+              <Text style={styles.metaText}>{memberCount} members</Text>
+              <View style={styles.divider} />
+              <View style={styles.balanceRow}>
+                <View>
+                  <Text style={styles.balanceLabel}>You Owe</Text>
+                  <Text style={[styles.balanceValue, { color: toneFromAmount(youOweCents) }]}>
+                    {formatCents(youOweCents)}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={styles.balanceLabel}>You're Owed</Text>
+                  <Text style={[styles.balanceValue, { color: youreOwedCents > 0 ? "#16A34A" : "#94A3B8" }]}>
+                    {formatCents(youreOwedCents)}
+                  </Text>
+                </View>
+              </View>
+            </View>
 
-        {trips.map((trip) => (
-          <TripCard
-            key={trip.id}
-            trip={trip}
-            onPress={() => navigation.navigate("Itinerary")}
-          />
-        ))}
-      </ScrollView>
+            <Pressable style={styles.createButton} onPress={() => navigation.navigate("Itinerary")}>
+              <Text style={styles.createButtonText}>Open Trip</Text>
+            </Pressable>
+
+            <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("CreateTrip")}>
+              <Text style={styles.secondaryButtonText}>Create / Join Another Trip</Text>
+            </Pressable>
+
+            <Text style={styles.sectionTitle}>Recent Activity</Text>
+            {loading ? <Text style={styles.loadingText}>Loading...</Text> : null}
+          </View>
+        }
+        renderItem={({ item }) => (
+          <View style={styles.activityCard}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.activityText}>{item.text}</Text>
+              <Text style={styles.activitySub}>
+                {new Date(item.createdAtMs || Date.now()).toLocaleString()}
+              </Text>
+            </View>
+            {item.amount ? <Text style={styles.activityAmount}>{item.amount}</Text> : null}
+          </View>
+        )}
+        ListEmptyComponent={
+          !loading ? <Text style={styles.loadingText}>No activity yet.</Text> : null
+        }
+      />
     </View>
   );
 }
@@ -178,77 +210,32 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
     paddingBottom: 28,
-    gap: 16,
-  },
-  createButton: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: 14,
-    height: 52,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  createButtonText: {
-    color: "white",
-    fontSize: 18,
-    fontWeight: "800",
+    gap: 12,
   },
   card: {
     backgroundColor: "white",
     borderRadius: 16,
-    overflow: "hidden",
     borderWidth: 1,
     borderColor: "#E5E7EB",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  cardHeader: {
-    paddingHorizontal: 18,
-    paddingVertical: 18,
-    gap: 9,
+    padding: 16,
+    gap: 8,
   },
   tripTitle: {
-    color: "white",
-    fontWeight: "800",
-    fontSize: 16,
-  },
-  tripLocation: {
-    color: "white",
-    opacity: 0.95,
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  infoWithIcon: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  cardBody: {
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    gap: 12,
-  },
-  metaRow: {
-    flexDirection: "row",
-    gap: 16,
-    flexWrap: "wrap",
+    color: "#0F172A",
+    fontWeight: "900",
+    fontSize: 20,
   },
   metaText: {
     color: "#334155",
-    fontSize: 12,
+    fontSize: 13,
   },
   divider: {
     height: 1,
     backgroundColor: "#E5E7EB",
+    marginTop: 8,
   },
   balanceRow: {
+    marginTop: 8,
     flexDirection: "row",
     justifyContent: "space-between",
   },
@@ -260,5 +247,65 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: "800",
     fontSize: 17,
+  },
+  createButton: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: 14,
+    height: 52,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  createButtonText: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  secondaryButton: {
+    backgroundColor: "white",
+    borderRadius: 14,
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+  },
+  secondaryButtonText: {
+    color: "#1E40AF",
+    fontWeight: "800",
+  },
+  sectionTitle: {
+    marginTop: 10,
+    fontWeight: "900",
+    color: "#0F172A",
+    fontSize: 18,
+  },
+  loadingText: {
+    color: "#64748B",
+    fontSize: 14,
+  },
+  activityCard: {
+    backgroundColor: "white",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 10,
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+  },
+  activityText: {
+    color: "#0F172A",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  activitySub: {
+    marginTop: 2,
+    color: "#64748B",
+    fontSize: 12,
+  },
+  activityAmount: {
+    fontWeight: "800",
+    color: "#0F172A",
   },
 });

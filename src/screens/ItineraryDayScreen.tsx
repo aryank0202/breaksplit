@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Feather } from "@expo/vector-icons";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import {
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -15,127 +15,143 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
 import { useTrip } from "../state/TripStore";
+import {
+  addItineraryItem,
+  deleteItineraryItem,
+  listItineraryItems,
+  updateItineraryItem,
+} from "../api/itinerary";
 
 type TimelineItem = {
   id: string;
-  time: string;
+  time?: string;
   title: string;
-  location: string;
-  note?: string;
+  locationName?: string;
+  notes?: string;
 };
 
-function dateForTripDay(dayIndex: number) {
-  const base = new Date(2026, 2, 8); // March 8, 2026
-  const current = new Date(base);
-  current.setDate(base.getDate() + dayIndex);
-  const yyyy = current.getFullYear();
-  const mm = String(current.getMonth() + 1).padStart(2, "0");
-  const dd = String(current.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+function toIsoDate(date: Date) {
+  return date.toISOString().slice(0, 10);
 }
 
-function normalizeTime(value?: string) {
-  if (!value || !value.trim()) return "TBD";
-  return value.trim();
-}
-
-function formatTime(date: Date) {
-  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
-function timeToMinutes(value?: string) {
-  if (!value) return Number.MAX_SAFE_INTEGER;
-  const v = value.trim().toUpperCase();
-  const match = v.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
-  if (!match) return Number.MAX_SAFE_INTEGER;
-
-  let hour = parseInt(match[1], 10);
-  const minute = parseInt(match[2], 10);
-  const period = match[3];
-
-  if (period === "AM") {
-    if (hour === 12) hour = 0;
-  } else if (hour !== 12) {
-    hour += 12;
+function dayRange(startDate: string, endDate: string) {
+  const out: string[] = [];
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  const current = new Date(start);
+  while (current <= end) {
+    out.push(toIsoDate(current));
+    current.setDate(current.getDate() + 1);
   }
-
-  return hour * 60 + minute;
+  return out;
 }
 
 export default function ItineraryDayScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { state, addItinerary, deleteItinerary } = useTrip();
+  const { selectedTripId, selectedTrip } = useTrip();
+  const dayIds = useMemo(() => {
+    if (!selectedTrip) return [toIsoDate(new Date())];
+    return dayRange(selectedTrip.startDate, selectedTrip.endDate);
+  }, [selectedTrip]);
+
   const [selectedDay, setSelectedDay] = useState(0);
-  const [dayCount, setDayCount] = useState(4);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [newTime, setNewTime] = useState<Date | null>(null);
-  const [draftTime, setDraftTime] = useState<Date>(new Date());
+  const [items, setItems] = useState<TimelineItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [newTime, setNewTime] = useState("");
   const [newTitle, setNewTitle] = useState("");
   const [newLocation, setNewLocation] = useState("");
   const [newNotes, setNewNotes] = useState("");
 
-  const dayTabs = useMemo(
-    () => Array.from({ length: dayCount }, (_, i) => `Day ${i + 1}`),
-    [dayCount]
-  );
-  const selectedDate = useMemo(() => dateForTripDay(selectedDay), [selectedDay]);
+  const selectedDayId = dayIds[Math.min(selectedDay, dayIds.length - 1)];
   const canSave = newTitle.trim().length > 0;
 
-  const timelineItems = useMemo(() => {
-    const fromStore = state.itinerary
-      .filter((item) => item.date === selectedDate)
-      .sort((a, b) => {
-        const aMinutes = timeToMinutes(a.time);
-        const bMinutes = timeToMinutes(b.time);
-        if (aMinutes !== bMinutes) return aMinutes - bMinutes;
-        return a.createdAt - b.createdAt;
-      })
-      .map((item) => ({
-        id: item.id,
-        time: normalizeTime(item.time),
-        title: item.title,
-        location: item.location ?? "No location",
-        note: item.description,
-      }));
+  async function loadItems() {
+    if (!selectedTripId || !selectedDayId) return;
+    try {
+      setLoading(true);
+      const rows = await listItineraryItems(selectedTripId, selectedDayId);
+      setItems(
+        rows.map((row) => ({
+          id: row.id,
+          time: row.time,
+          title: row.title,
+          locationName: row.locationName,
+          notes: row.notes,
+        }))
+      );
+    } catch (error: any) {
+      Alert.alert("Error", error?.message ?? "Could not load itinerary.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
-    return fromStore;
-  }, [selectedDate, selectedDay, state.itinerary]);
+  useEffect(() => {
+    void loadItems();
+  }, [selectedDayId, selectedTripId]);
 
-  function resetModalForm() {
-    setNewTime(null);
-    setDraftTime(new Date());
+  function resetForm() {
+    setEditingItemId(null);
+    setNewTime("");
     setNewTitle("");
     setNewLocation("");
     setNewNotes("");
-    setShowTimePicker(false);
   }
 
   function closeModal() {
-    setShowAddModal(false);
-    resetModalForm();
+    setShowModal(false);
+    resetForm();
   }
 
-  function onAddEvent() {
-    if (!canSave) return;
-
-    addItinerary({
-      title: newTitle.trim(),
-      time: newTime ? formatTime(newTime) : undefined,
-      location: newLocation.trim() || undefined,
-      description: newNotes.trim() || undefined,
-      date: selectedDate,
-    });
-
-    closeModal();
+  function onStartAdd() {
+    resetForm();
+    setShowModal(true);
   }
 
-  function onPressAddDay() {
-    setDayCount((prev) => {
-      const nextIndex = prev;
-      setSelectedDay(nextIndex);
-      return prev + 1;
-    });
+  function onStartEdit(item: TimelineItem) {
+    setEditingItemId(item.id);
+    setNewTime(item.time ?? "");
+    setNewTitle(item.title);
+    setNewLocation(item.locationName ?? "");
+    setNewNotes(item.notes ?? "");
+    setShowModal(true);
+  }
+
+  async function onSave() {
+    if (!selectedTripId || !selectedDayId || !canSave) return;
+    try {
+      if (editingItemId) {
+        await updateItineraryItem(selectedTripId, selectedDayId, editingItemId, {
+          time: newTime.trim() || undefined,
+          title: newTitle.trim(),
+          locationName: newLocation.trim() || undefined,
+          notes: newNotes.trim() || undefined,
+        });
+      } else {
+        await addItineraryItem(selectedTripId, selectedDayId, {
+          time: newTime.trim() || undefined,
+          title: newTitle.trim(),
+          locationName: newLocation.trim() || undefined,
+          notes: newNotes.trim() || undefined,
+        });
+      }
+      closeModal();
+      await loadItems();
+    } catch (error: any) {
+      Alert.alert("Save failed", error?.message ?? "Could not save itinerary item.");
+    }
+  }
+
+  async function onDelete(itemId: string) {
+    if (!selectedTripId || !selectedDayId) return;
+    try {
+      await deleteItineraryItem(selectedTripId, selectedDayId, itemId);
+      await loadItems();
+    } catch (error: any) {
+      Alert.alert("Delete failed", error?.message ?? "Could not delete itinerary item.");
+    }
   }
 
   return (
@@ -149,64 +165,58 @@ export default function ItineraryDayScreen({ navigation }: any) {
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayTabs}>
-          {dayTabs.map((day, index) => {
+          {dayIds.map((dayId, index) => {
             const active = selectedDay === index;
             return (
               <Pressable
-                key={day}
+                key={dayId}
                 onPress={() => setSelectedDay(index)}
                 style={[styles.dayPill, active ? styles.dayPillActive : styles.dayPillInactive]}
               >
                 <Text style={[styles.dayLabel, active ? styles.dayLabelActive : styles.dayLabelInactive]}>
-                  {day}
+                  Day {index + 1}
                 </Text>
               </Pressable>
             );
           })}
-          <Pressable onPress={onPressAddDay} style={styles.addDayPill}>
-            <Feather name="plus" size={14} color={theme.colors.primary} />
-            <Text style={styles.addDayLabel}>Day</Text>
-          </Pressable>
         </ScrollView>
-
-        <View style={styles.scrollTrack}>
-          <View style={[styles.scrollThumb, { width: `${((selectedDay + 1) / dayTabs.length) * 100}%` }]} />
-        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.timelineContent}>
-        {timelineItems.length === 0 ? (
-          <Text style={styles.emptyText}>No itinerary items for this day yet.</Text>
-        ) : null}
+        {loading ? <Text style={styles.emptyText}>Loading...</Text> : null}
+        {!loading && items.length === 0 ? <Text style={styles.emptyText}>No itinerary items for this day yet.</Text> : null}
 
-        {timelineItems.map((item) => (
+        {items.map((item) => (
           <View key={item.id} style={styles.timelineRow}>
             <View style={styles.railWrap}>
               <View style={styles.railDot} />
               <View style={styles.railLine} />
             </View>
-
             <View style={styles.eventCard}>
               <View style={styles.eventTopRow}>
                 <View style={styles.metaRow}>
                   <Feather name="clock" size={15} color="#94A3B8" />
-                  <Text style={styles.timeText}>{item.time}</Text>
+                  <Text style={styles.timeText}>{item.time || "TBD"}</Text>
                 </View>
-                <Pressable onPress={() => deleteItinerary(item.id)} hitSlop={8} style={styles.deleteButton}>
-                  <Feather name="trash-2" size={15} color="#EF4444" />
-                </Pressable>
+                <View style={{ flexDirection: "row", gap: 6 }}>
+                  <Pressable onPress={() => onStartEdit(item)} hitSlop={8} style={styles.editButton}>
+                    <Feather name="edit-2" size={14} color="#2563EB" />
+                  </Pressable>
+                  <Pressable onPress={() => onDelete(item.id)} hitSlop={8} style={styles.deleteButton}>
+                    <Feather name="trash-2" size={15} color="#EF4444" />
+                  </Pressable>
+                </View>
               </View>
 
               <Text style={styles.eventTitle}>{item.title}</Text>
-
               <View style={[styles.metaRow, { marginTop: 8 }]}>
                 <Feather name="map-pin" size={15} color="#94A3B8" />
-                <Text style={styles.locationText}>{item.location}</Text>
+                <Text style={styles.locationText}>{item.locationName || "No location"}</Text>
               </View>
 
-              {item.note ? (
+              {item.notes ? (
                 <View style={styles.noteBox}>
-                  <Text style={styles.noteText}>{item.note}</Text>
+                  <Text style={styles.noteText}>{item.notes}</Text>
                 </View>
               ) : null}
             </View>
@@ -214,129 +224,82 @@ export default function ItineraryDayScreen({ navigation }: any) {
         ))}
       </ScrollView>
 
-      <Pressable onPress={() => setShowAddModal(true)} style={[styles.fab, { bottom: insets.bottom + 18 }]}>
+      <Pressable onPress={onStartAdd} style={[styles.fab, { bottom: insets.bottom + 18 }]}>
         <Feather name="plus" size={28} color="white" />
       </Pressable>
 
-      <Modal
-        visible={showAddModal}
-        transparent
-        animationType="slide"
-        onRequestClose={closeModal}
-      >
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-        >
+      <Modal visible={showModal} transparent animationType="slide" onRequestClose={closeModal}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[styles.modalSheet, { paddingBottom: Math.max(insets.bottom, 14) }]}>
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={styles.modalContent}
-              showsVerticalScrollIndicator={false}
-            >
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Add Event</Text>
-              <Pressable onPress={closeModal} style={styles.closeCircle}>
-                <Feather name="x" size={20} color="#6B7280" />
-              </Pressable>
-            </View>
-
-            <View style={styles.dayBadge}>
-              <Feather name="calendar" size={14} color={theme.colors.primary} />
-              <Text style={styles.dayBadgeText}>Adding to {dayTabs[selectedDay]}</Text>
-            </View>
-
-            <Text style={styles.fieldLabel}>Time</Text>
-            <Pressable
-              onPress={() => {
-                setDraftTime(newTime ?? new Date());
-                setShowTimePicker(true);
-              }}
-              style={styles.inputShell}
-            >
-              <Feather name="clock" size={18} color="#9CA3AF" />
-              <Text style={[styles.inputText, !newTime ? styles.placeholderText : null]}>
-                {newTime ? formatTime(newTime) : "--:-- --"}
-              </Text>
-            </Pressable>
-            {showTimePicker ? (
-              <View style={styles.pickerWrap}>
-                <DateTimePicker
-                  value={draftTime}
-                  mode="time"
-                  display="spinner"
-                  textColor="#111827"
-                  themeVariant="light"
-                  onChange={(_, selected) => {
-                    if (selected) setDraftTime(selected);
-                  }}
-                />
-                <View style={styles.pickerActions}>
-                  <Pressable onPress={() => setShowTimePicker(false)} style={styles.pickerActionButton}>
-                    <Text style={styles.pickerActionText}>Cancel</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => {
-                      setNewTime(draftTime);
-                      setShowTimePicker(false);
-                    }}
-                    style={styles.pickerActionButton}
-                  >
-                    <Text style={[styles.pickerActionText, { color: theme.colors.primary }]}>Set Time</Text>
-                  </Pressable>
-                </View>
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.modalContent}>
+              <View style={styles.modalHeaderRow}>
+                <Text style={styles.modalTitle}>{editingItemId ? "Edit Event" : "Add Event"}</Text>
+                <Pressable onPress={closeModal} style={styles.closeCircle}>
+                  <Feather name="x" size={20} color="#6B7280" />
+                </Pressable>
               </View>
-            ) : null}
 
-            <Text style={styles.fieldLabel}>Event Title</Text>
-            <View style={styles.inputShell}>
-              <TextInput
-                value={newTitle}
-                onChangeText={setNewTitle}
-                placeholder="e.g., Lunch at Ocean Drive"
-                placeholderTextColor="#9CA3AF"
-                style={styles.inputText}
-              />
-            </View>
+              <Text style={styles.fieldLabel}>Time (optional)</Text>
+              <View style={styles.inputShell}>
+                <Feather name="clock" size={18} color="#9CA3AF" />
+                <TextInput
+                  value={newTime}
+                  onChangeText={setNewTime}
+                  placeholder="e.g. 9:00 AM"
+                  placeholderTextColor="#9CA3AF"
+                  style={styles.inputText}
+                />
+              </View>
 
-            <Text style={styles.fieldLabel}>Location</Text>
-            <View style={styles.inputShell}>
-              <Feather name="map-pin" size={18} color="#9CA3AF" />
-              <TextInput
-                value={newLocation}
-                onChangeText={setNewLocation}
-                placeholder="e.g., South Beach"
-                placeholderTextColor="#9CA3AF"
-                style={styles.inputText}
-              />
-            </View>
+              <Text style={styles.fieldLabel}>Event Title</Text>
+              <View style={styles.inputShell}>
+                <TextInput
+                  value={newTitle}
+                  onChangeText={setNewTitle}
+                  placeholder="e.g., Lunch at Ocean Drive"
+                  placeholderTextColor="#9CA3AF"
+                  style={styles.inputText}
+                />
+              </View>
 
-            <Text style={styles.fieldLabel}>Notes (Optional)</Text>
-            <View style={[styles.inputShell, styles.notesShell]}>
-              <TextInput
-                value={newNotes}
-                onChangeText={setNewNotes}
-                placeholder="Add any additional details..."
-                placeholderTextColor="#9CA3AF"
-                style={[styles.inputText, styles.notesInput]}
-                multiline
-                textAlignVertical="top"
-              />
-            </View>
+              <Text style={styles.fieldLabel}>Location</Text>
+              <View style={styles.inputShell}>
+                <Feather name="map-pin" size={18} color="#9CA3AF" />
+                <TextInput
+                  value={newLocation}
+                  onChangeText={setNewLocation}
+                  placeholder="e.g., South Beach"
+                  placeholderTextColor="#9CA3AF"
+                  style={styles.inputText}
+                />
+              </View>
 
-            <Pressable
-              onPress={onAddEvent}
-              disabled={!canSave}
-              style={[styles.primaryModalButton, !canSave ? styles.primaryModalButtonDisabled : null]}
-            >
-              <Text style={[styles.primaryModalButtonText, !canSave ? styles.primaryModalButtonTextDisabled : null]}>
-                Add Event
-              </Text>
-            </Pressable>
+              <Text style={styles.fieldLabel}>Notes (Optional)</Text>
+              <View style={[styles.inputShell, styles.notesShell]}>
+                <TextInput
+                  value={newNotes}
+                  onChangeText={setNewNotes}
+                  placeholder="Add details..."
+                  placeholderTextColor="#9CA3AF"
+                  style={[styles.inputText, styles.notesInput]}
+                  multiline
+                  textAlignVertical="top"
+                />
+              </View>
 
-            <Pressable onPress={closeModal} style={styles.secondaryModalButton}>
-              <Text style={styles.secondaryModalButtonText}>Cancel</Text>
-            </Pressable>
+              <Pressable
+                onPress={onSave}
+                disabled={!canSave}
+                style={[styles.primaryModalButton, !canSave ? styles.primaryModalButtonDisabled : null]}
+              >
+                <Text style={[styles.primaryModalButtonText, !canSave ? styles.primaryModalButtonTextDisabled : null]}>
+                  {editingItemId ? "Save Changes" : "Add Event"}
+                </Text>
+              </Pressable>
+
+              <Pressable onPress={closeModal} style={styles.secondaryModalButton}>
+                <Text style={styles.secondaryModalButtonText}>Cancel</Text>
+              </Pressable>
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
@@ -396,34 +359,6 @@ const styles = StyleSheet.create({
   dayLabelInactive: {
     color: "#475569",
   },
-  addDayPill: {
-    height: 36,
-    paddingHorizontal: 12,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#BFDBFE",
-    backgroundColor: "#EFF6FF",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  addDayLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: theme.colors.primary,
-  },
-  scrollTrack: {
-    marginTop: 8,
-    height: 6,
-    backgroundColor: "#3F3F46",
-    borderRadius: 3,
-    overflow: "hidden",
-  },
-  scrollThumb: {
-    height: 6,
-    backgroundColor: "#71717A",
-    borderRadius: 3,
-  },
   timelineContent: {
     paddingHorizontal: 14,
     paddingTop: 18,
@@ -460,11 +395,6 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
     paddingHorizontal: 16,
     paddingVertical: 14,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 1,
   },
   metaRow: {
     flexDirection: "row",
@@ -475,6 +405,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  editButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EFF6FF",
   },
   deleteButton: {
     width: 28,
@@ -524,11 +462,6 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 3,
   },
   modalOverlay: {
     flex: 1,
@@ -564,23 +497,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  dayBadge: {
-    marginTop: 14,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: "#DBEAFE",
-    borderWidth: 1,
-    borderColor: "#BFDBFE",
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 8,
-  },
-  dayBadgeText: {
-    color: theme.colors.primary,
-    fontWeight: "700",
-    fontSize: 13,
-  },
   fieldLabel: {
     marginTop: 16,
     marginBottom: 8,
@@ -604,34 +520,6 @@ const styles = StyleSheet.create({
     color: "#1F2937",
     fontSize: 14,
     paddingVertical: 0,
-  },
-  placeholderText: {
-    color: "#9CA3AF",
-  },
-  pickerWrap: {
-    marginTop: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    backgroundColor: "white",
-    overflow: "hidden",
-  },
-  pickerActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingBottom: 10,
-  },
-  pickerActionButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  pickerActionText: {
-    color: "#6B7280",
-    fontSize: 13,
-    fontWeight: "700",
   },
   notesShell: {
     minHeight: 92,

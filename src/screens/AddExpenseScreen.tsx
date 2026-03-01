@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, Alert } from "react-native";
 import { theme } from "../theme";
 import Card from "../components/Card";
@@ -6,169 +6,144 @@ import Row from "../components/Row";
 import Chip from "../components/Chip";
 import Segmented from "../components/Segmented";
 import { useTrip } from "../state/TripStore";
+import { dollarsToCents, formatCents } from "../utils/money";
+import { createExpense } from "../api/expenses";
+import { listMembers } from "../api/trips";
 
-type SplitMode = "equal" | "custom" | "percentage";
-
-type Member = {
-  id: string;
-  name: string;
-};
-
-
-function dollarsToCents(input: string) {
-  // allow "12", "12.3", "12.34"
-  const normalized = input.replace(/[^0-9.]/g, "");
-  if (!normalized) return 0;
-  const num = Number(normalized);
-  if (Number.isNaN(num)) return 0;
-  return Math.round(num * 100);
-}
-
-function centsToDollars(cents: number) {
-  return (cents / 100).toFixed(2);
-}
+type SplitMode = "equal" | "custom" | "percent";
+type Member = { id: string; name: string };
 
 function sanitizeAmountInput(input: string) {
   const cleaned = input.replace(/[^\d.]/g, "");
   if (!cleaned) return "";
-
   const hasDot = cleaned.includes(".");
-  const parts = cleaned.split(".");
-  const leftRaw = parts[0] ?? "";
-  const rightRaw = parts.slice(1).join("");
-
-  const left = leftRaw.slice(0, 4);
+  const [leftRaw = "", ...rest] = cleaned.split(".");
+  const rightRaw = rest.join("");
+  const left = leftRaw.slice(0, 7);
   if (!hasDot) return left;
-
   const normalizedLeft = left.length === 0 ? "0" : left;
   const right = rightRaw.slice(0, 2);
-
-  if (cleaned.endsWith(".") && right.length === 0) {
-    return `${normalizedLeft}.`;
-  }
-
+  if (cleaned.endsWith(".") && right.length === 0) return `${normalizedLeft}.`;
   return `${normalizedLeft}.${right}`;
 }
 
+function toNumber(s: string) {
+  const n = Number(s.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
 export default function AddExpenseScreen({ navigation }: any) {
-  const { state, addExpense } = useTrip();
+  const { selectedTripId, currentUser } = useTrip();
+  const [members, setMembers] = useState<Member[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(true);
+  const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
-  const [amount, setAmount] = useState(""); // dollars string
-  const [payerId, setPayerId] = useState("me");
+  const [amount, setAmount] = useState("");
+  const [payerId, setPayerId] = useState("");
   const [splitMode, setSplitMode] = useState<SplitMode>("equal");
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
   const [percentages, setPercentages] = useState<Record<string, string>>({});
-
-  const [selectedIds, setSelectedIds] = useState<string[]>(
-  state.members.map((m) => m.id)
-);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const amountCents = useMemo(() => dollarsToCents(amount), [amount]);
-
-  // helpers for new split modes
-  function toCentsFromMoneyText(s: string) {
-    const n = Number(s.replace(/[^0-9.]/g, ""));
-    if (!Number.isFinite(n)) return 0;
-    return Math.round(n * 100);
-  }
-
-  function toNumber(s: string) {
-    const n = Number(s.replace(/[^0-9.]/g, ""));
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  function dollarsFromCents(cents: number) {
-    return (cents / 100).toFixed(2);
-  }
-
   const selectedMembers = useMemo(
-  () => state.members.filter((m) => selectedIds.includes(m.id)),
-  [state.members, selectedIds]
-);
+    () => members.filter((member) => selectedIds.includes(member.id)),
+    [members, selectedIds]
+  );
+
+  useEffect(() => {
+    async function loadMembers() {
+      if (!selectedTripId || !currentUser) return;
+      try {
+        setLoadingMembers(true);
+        const tripMembers = await listMembers(selectedTripId);
+        const memberRows = tripMembers.map((member) => ({
+          id: member.uid,
+          name: member.uid === currentUser.uid ? "You" : member.displayName,
+        }));
+        setMembers(memberRows);
+        setSelectedIds(memberRows.map((member) => member.id));
+        setPayerId(currentUser.uid);
+      } catch (error: any) {
+        Alert.alert("Error", error?.message ?? "Could not load members.");
+      } finally {
+        setLoadingMembers(false);
+      }
+    }
+    void loadMembers();
+  }, [currentUser, selectedTripId]);
 
   const equalPreview = useMemo(() => {
-    const n = selectedMembers.length;
-    if (n === 0 || amountCents === 0) return [];
-    const base = Math.floor(amountCents / n);
-    const remainder = amountCents % n;
-
-    return selectedMembers.map((m, idx) => {
-      const owed = base + (idx < remainder ? 1 : 0);
-      return { id: m.id, name: m.name, owedCents: owed };
+    if (selectedMembers.length === 0 || amountCents === 0) return [];
+    const base = Math.floor(amountCents / selectedMembers.length);
+    let remainder = amountCents - base * selectedMembers.length;
+    return selectedMembers.map((member) => {
+      const owed = base + (remainder > 0 ? 1 : 0);
+      remainder -= remainder > 0 ? 1 : 0;
+      return { id: member.id, name: member.name, owedCents: owed };
     });
-  }, [selectedMembers, amountCents]);
+  }, [amountCents, selectedMembers]);
 
   function toggleMember(id: string) {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
   }
 
-  function onCreate() {
-    // validations per mode
+  async function onCreate() {
+    if (!selectedTripId) return;
+    if (!title.trim() || amountCents <= 0 || selectedIds.length === 0 || !payerId) {
+      Alert.alert("Missing fields", "Please complete title, amount, payer and participants.");
+      return;
+    }
+
+    const customSplits: Record<string, number> = {};
     if (splitMode === "custom") {
-      const sumCustom = selectedIds.reduce(
-        (acc, id) => acc + toCentsFromMoneyText(customAmounts[id] ?? "0"),
-        0
-      );
-      if (sumCustom !== amountCents) {
-        Alert.alert("Totals mismatch", "Custom amounts must add up to expense total.");
+      selectedIds.forEach((id) => {
+        customSplits[id] = dollarsToCents(customAmounts[id] ?? "0");
+      });
+      const sum = Object.values(customSplits).reduce((acc, value) => acc + value, 0);
+      if (sum !== amountCents) {
+        Alert.alert("Totals mismatch", "Custom amounts must add up to the total.");
         return;
       }
     }
-
-    if (splitMode === "percentage") {
-      const pctSum = selectedIds.reduce(
-        (acc, id) => acc + toNumber(percentages[id] ?? "0"),
-        0
-      );
-      if (Math.abs(pctSum - 100) > 0.01) {
+    if (splitMode === "percent") {
+      selectedIds.forEach((id) => {
+        customSplits[id] = toNumber(percentages[id] ?? "0");
+      });
+      const sum = Object.values(customSplits).reduce((acc, value) => acc + value, 0);
+      if (Math.abs(sum - 100) > 0.01) {
         Alert.alert("Percent error", "Percentages must total 100%.");
         return;
       }
     }
 
-    // create expense with proper payload
-    const basePayload: any = {
-      title: title.trim(),
-      totalCents: amountCents,
-      paidById: payerId,
-      participantIds: selectedIds,
-      notes: "", // optional
-      splitMode,
-    };
-
-    if (splitMode === "custom") {
-      const map: Record<string, number> = {};
-      selectedIds.forEach((id) => {
-        map[id] = toCentsFromMoneyText(customAmounts[id] ?? "0");
+    try {
+      setCreating(true);
+      await createExpense(selectedTripId, {
+        title: title.trim(),
+        amountCents,
+        payerUid: payerId,
+        participantUids: selectedIds,
+        splitType: splitMode,
+        note: "",
+        customSplits: splitMode === "equal" ? undefined : customSplits,
       });
-      basePayload.customAmountsCents = map;
+      navigation.goBack();
+    } catch (error: any) {
+      Alert.alert("Create failed", error?.message ?? "Could not create expense.");
+    } finally {
+      setCreating(false);
     }
-
-    if (splitMode === "percentage") {
-      const map: Record<string, number> = {};
-      selectedIds.forEach((id) => {
-        map[id] = toNumber(percentages[id] ?? "0");
-      });
-      basePayload.percentages = map;
-    }
-
-    const expenseId = addExpense(basePayload);
-    navigation.goBack();
   }
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <View style={{ padding: 20, paddingBottom: 40, gap: 14 }}>
-        <Text style={{ fontSize: 20, fontWeight: "900", color: theme.colors.text }}>
-          Add Expense
-        </Text>
+        <Text style={{ fontSize: 20, fontWeight: "900", color: theme.colors.text }}>Add Expense</Text>
+        {loadingMembers ? <Text style={{ color: theme.colors.muted }}>Loading members...</Text> : null}
 
         <Card>
-          <Text style={{ color: theme.colors.muted, fontWeight: "800", marginBottom: 8 }}>
-            Expense Title
-          </Text>
+          <Text style={{ color: theme.colors.muted, fontWeight: "800", marginBottom: 8 }}>Expense Title</Text>
           <TextInput
             value={title}
             onChangeText={setTitle}
@@ -188,18 +163,15 @@ export default function AddExpenseScreen({ navigation }: any) {
         </Card>
 
         <Card>
-          <Text style={{ color: theme.colors.muted, fontWeight: "800", marginBottom: 8 }}>
-            Amount
-          </Text>
+          <Text style={{ color: theme.colors.muted, fontWeight: "800", marginBottom: 8 }}>Amount</Text>
           <Row style={{ gap: 10 }}>
             <Text style={{ fontSize: 22, fontWeight: "900" }}>$</Text>
             <TextInput
               value={amount}
-              onChangeText={(t) => setAmount(sanitizeAmountInput(t))}
+              onChangeText={(text) => setAmount(sanitizeAmountInput(text))}
               placeholder="0.00"
               placeholderTextColor="#9CA3AF"
               keyboardType="decimal-pad"
-              maxLength={7}
               style={{
                 flex: 1,
                 borderWidth: 1,
@@ -213,83 +185,60 @@ export default function AddExpenseScreen({ navigation }: any) {
               }}
             />
           </Row>
-          <Text style={{ marginTop: 8, color: theme.colors.muted, fontWeight: "600" }}>
-            Stored as cents to avoid rounding issues.
-          </Text>
+          <Text style={{ marginTop: 8, color: theme.colors.muted, fontWeight: "600" }}>Stored as cents.</Text>
         </Card>
 
         <Card>
-          <Text style={{ color: theme.colors.muted, fontWeight: "800", marginBottom: 10 }}>
-            Who Paid?
-          </Text>
+          <Text style={{ color: theme.colors.muted, fontWeight: "800", marginBottom: 10 }}>Who Paid?</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-            {state.members.map((m) => (
-              <Chip
-                key={m.id}
-                label={m.name}
-                selected={payerId === m.id}
-                onPress={() => setPayerId(m.id)}
-              />
+            {members.map((member) => (
+              <Chip key={member.id} label={member.name} selected={payerId === member.id} onPress={() => setPayerId(member.id)} />
             ))}
           </View>
         </Card>
 
         <Card>
-          <Text style={{ color: theme.colors.muted, fontWeight: "800", marginBottom: 10 }}>
-            Split Type
-          </Text>
-<Segmented<SplitMode>
+          <Text style={{ color: theme.colors.muted, fontWeight: "800", marginBottom: 10 }}>Split Type</Text>
+          <Segmented<SplitMode>
             options={[
               { label: "Equal", value: "equal" },
               { label: "Custom", value: "custom" },
-              { label: "Percentage", value: "percentage" },
+              { label: "Percentage", value: "percent" },
             ]}
             value={splitMode}
             onChange={setSplitMode}
           />
 
-          {/* mode-specific UI */}
-          {splitMode === "custom" && selectedMembers.map((m) => (
-            <Row
-              key={m.id}
-              style={{ justifyContent: "space-between", alignItems: "center", marginTop: 10 }}
-            >
-              <Text style={{ fontWeight: "900" }}>{m.name}</Text>
-              <TextInput
-                value={customAmounts[m.id] ?? ""}
-                onChangeText={(t) => setCustomAmounts((prev) => ({ ...prev, [m.id]: t }))}
-                placeholder="$0.00"
-                keyboardType="decimal-pad"
-                style={{
-                  borderWidth: 1,
-                  borderColor: theme.colors.border,
-                  borderRadius: 12,
-                  paddingHorizontal: 8,
-                  paddingVertical: 6,
-                  fontSize: 16,
-                  fontWeight: "700",
-                  color: theme.colors.text,
-                  width: 100,
-                  textAlign: "right",
-                }}
-              />
-            </Row>
-          ))}
+          {splitMode === "custom" &&
+            selectedMembers.map((member) => (
+              <Row key={member.id} style={{ justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+                <Text style={{ fontWeight: "900" }}>{member.name}</Text>
+                <TextInput
+                  value={customAmounts[member.id] ?? ""}
+                  onChangeText={(text) => setCustomAmounts((prev) => ({ ...prev, [member.id]: sanitizeAmountInput(text) }))}
+                  placeholder="$0.00"
+                  keyboardType="decimal-pad"
+                  style={{
+                    borderWidth: 1,
+                    borderColor: theme.colors.border,
+                    borderRadius: 12,
+                    paddingHorizontal: 8,
+                    paddingVertical: 6,
+                    width: 100,
+                    textAlign: "right",
+                  }}
+                />
+              </Row>
+            ))}
 
-          {splitMode === "percentage" && selectedMembers.map((m) => {
-            const pct = toNumber(percentages[m.id] ?? "0");
-            const cents = Math.round((amountCents * pct) / 100);
-            return (
-              <Row
-                key={m.id}
-                style={{ justifyContent: "space-between", alignItems: "center", marginTop: 10 }}
-              >
-                <Text style={{ fontWeight: "900" }}>{m.name}</Text>
-
+          {splitMode === "percent" &&
+            selectedMembers.map((member) => (
+              <Row key={member.id} style={{ justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+                <Text style={{ fontWeight: "900" }}>{member.name}</Text>
                 <Row style={{ gap: 10, alignItems: "center" }}>
                   <TextInput
-                    value={percentages[m.id] ?? ""}
-                    onChangeText={(t) => setPercentages((prev) => ({ ...prev, [m.id]: t }))}
+                    value={percentages[member.id] ?? ""}
+                    onChangeText={(text) => setPercentages((prev) => ({ ...prev, [member.id]: text }))}
                     placeholder="0"
                     keyboardType="decimal-pad"
                     style={{
@@ -298,57 +247,33 @@ export default function AddExpenseScreen({ navigation }: any) {
                       borderRadius: 12,
                       paddingHorizontal: 8,
                       paddingVertical: 6,
-                      fontSize: 16,
-                      fontWeight: "700",
-                      color: theme.colors.text,
                       width: 60,
                       textAlign: "right",
                     }}
                   />
                   <Text style={{ fontWeight: "900" }}>%</Text>
-                  <Text style={{ color: theme.colors.muted, fontWeight: "900" }}>
-                    ${dollarsFromCents(cents)}
-                  </Text>
                 </Row>
               </Row>
-            );
-          })}
+            ))}
         </Card>
 
         <Card>
-          <Text style={{ color: theme.colors.muted, fontWeight: "800", marginBottom: 10 }}>
-            Participants
-          </Text>
-
+          <Text style={{ color: theme.colors.muted, fontWeight: "800", marginBottom: 10 }}>Participants</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-            {state.members.map((m) => (
-              <Chip
-                key={m.id}
-                label={m.name}
-                selected={selectedIds.includes(m.id)}
-                onPress={() => toggleMember(m.id)}
-              />
+            {members.map((member) => (
+              <Chip key={member.id} label={member.name} selected={selectedIds.includes(member.id)} onPress={() => toggleMember(member.id)} />
             ))}
           </View>
 
-          <Text style={{ marginTop: 12, fontWeight: "900", color: theme.colors.text }}>
-            Split Preview
-          </Text>
-
+          <Text style={{ marginTop: 12, fontWeight: "900", color: theme.colors.text }}>Split Preview</Text>
           <View style={{ marginTop: 10, gap: 8 }}>
             {equalPreview.length === 0 ? (
-              <Text style={{ color: theme.colors.muted, fontWeight: "600" }}>
-                Enter an amount and select participants to see a preview.
-              </Text>
+              <Text style={{ color: theme.colors.muted, fontWeight: "600" }}>Enter amount and participants to preview.</Text>
             ) : (
               equalPreview.map((row) => (
                 <Row key={row.id} style={{ justifyContent: "space-between" }}>
-                  <Text style={{ fontWeight: "800", color: theme.colors.text }}>
-                    {row.name}
-                  </Text>
-                  <Text style={{ fontWeight: "900", color: theme.colors.text }}>
-                    ${centsToDollars(row.owedCents)}
-                  </Text>
+                  <Text style={{ fontWeight: "800", color: theme.colors.text }}>{row.name}</Text>
+                  <Text style={{ fontWeight: "900", color: theme.colors.text }}>{formatCents(row.owedCents)}</Text>
                 </Row>
               ))
             )}
@@ -365,10 +290,9 @@ export default function AddExpenseScreen({ navigation }: any) {
             marginTop: 4,
             opacity: pressed ? 0.9 : 1,
           })}
+          disabled={creating}
         >
-          <Text style={{ color: "white", fontWeight: "900", fontSize: 16 }}>
-            Create Expense
-          </Text>
+          <Text style={{ color: "white", fontWeight: "900", fontSize: 16 }}>{creating ? "Creating..." : "Create Expense"}</Text>
         </Pressable>
 
         <Pressable
@@ -383,9 +307,7 @@ export default function AddExpenseScreen({ navigation }: any) {
             opacity: pressed ? 0.9 : 1,
           })}
         >
-          <Text style={{ fontWeight: "900", color: theme.colors.text }}>
-            Cancel
-          </Text>
+          <Text style={{ fontWeight: "900", color: theme.colors.text }}>Cancel</Text>
         </Pressable>
       </View>
     </ScrollView>

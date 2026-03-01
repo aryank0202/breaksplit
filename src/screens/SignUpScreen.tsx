@@ -1,12 +1,36 @@
 import React, { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { createUserWithEmailAndPassword } from "firebase/auth";
 import { theme } from "../theme";
+import { auth } from "../firebase";
+import { upsertUserProfile } from "../api/users";
 
 export default function SignUpScreen({ navigation }: any) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function onSignUp() {
+    if (!fullName.trim() || !email.trim() || !password.trim()) {
+      Alert.alert("Missing fields", "Please fill in all fields.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      await upsertUserProfile(credential.user.uid, {
+        displayName: fullName.trim(),
+        email: email.trim(),
+      });
+    } catch (error: any) {
+      Alert.alert("Sign up failed", error?.message ?? "Unable to create account.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <View style={styles.screen}>
@@ -53,8 +77,8 @@ export default function SignUpScreen({ navigation }: any) {
           />
         </View>
 
-        <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("TripHome")}>
-          <Text style={styles.primaryButtonText}>Sign Up</Text>
+        <Pressable style={styles.primaryButton} onPress={onSignUp} disabled={loading}>
+          <Text style={styles.primaryButtonText}>{loading ? "Creating..." : "Sign Up"}</Text>
         </Pressable>
 
         <View style={styles.switchRow}>

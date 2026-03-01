@@ -1,11 +1,30 @@
 import React, { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import { theme } from "../theme";
+import { auth } from "../firebase";
 
 export default function LoginScreen({ navigation }: any) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function onLogin() {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert("Missing fields", "Enter your email and password.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+    } catch (error: any) {
+      Alert.alert("Login failed", error?.message ?? "Unable to log in.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <View style={styles.screen}>
@@ -41,8 +60,8 @@ export default function LoginScreen({ navigation }: any) {
           />
         </View>
 
-        <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("TripHome")}>
-          <Text style={styles.primaryButtonText}>Log In</Text>
+        <Pressable style={styles.primaryButton} onPress={onLogin} disabled={loading}>
+          <Text style={styles.primaryButtonText}>{loading ? "Logging In..." : "Log In"}</Text>
         </Pressable>
 
         <View style={styles.switchRow}>
