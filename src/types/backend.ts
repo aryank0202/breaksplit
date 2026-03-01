@@ -4,6 +4,7 @@ export type UserDoc = {
   displayName: string;
   email: string;
   venmoHandle?: string;
+  lastTripId?: string;
   createdAt: Timestamp | null;
 };
 

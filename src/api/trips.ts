@@ -96,21 +96,37 @@ export async function joinTripByInviteCode(code: string) {
 }
 
 export async function listMyTrips(uid: string) {
-  const memberships = await getDocs(
-    query(collectionGroup(db, "members"), where(documentId(), "==", uid))
-  );
+  const memberships = await getDocs(query(collectionGroup(db, "members"), where(documentId(), "==", uid)));
 
-  const tripIds = memberships.docs
+  let tripIds = memberships.docs
     .map((membershipDoc) => membershipDoc.ref.parent.parent?.id)
     .filter((tripId): tripId is string => Boolean(tripId));
+
+  // Fallback: if collectionGroup query returns nothing, scan trips and check member doc directly.
+  if (tripIds.length === 0) {
+    const tripsSnap = await getDocs(collection(db, "trips"));
+    const checks = await Promise.all(
+      tripsSnap.docs.map(async (tripDoc) => {
+        const memberDoc = await getDoc(doc(db, "trips", tripDoc.id, "members", uid));
+        return memberDoc.exists() ? tripDoc.id : null;
+      })
+    );
+    tripIds = checks.filter((tripId): tripId is string => Boolean(tripId));
+  }
+
+  // Additional fallback: include trips created by this user.
+  try {
+    const createdBySnap = await getDocs(query(collection(db, "trips"), where("createdBy", "==", uid)));
+    tripIds.push(...createdBySnap.docs.map((tripDoc) => tripDoc.id));
+  } catch {
+    // Ignore createdBy lookup errors; membership-based lookups may still succeed.
+  }
 
   const uniqueTripIds = [...new Set(tripIds)];
   if (uniqueTripIds.length === 0) return [];
 
   const docs = await Promise.all(uniqueTripIds.map((tripId) => getDoc(doc(db, "trips", tripId))));
-  return docs
-    .filter((tripDoc) => tripDoc.exists())
-    .map((tripDoc) => ({ id: tripDoc.id, ...(tripDoc.data() as TripDoc) }));
+  return docs.filter((tripDoc) => tripDoc.exists()).map((tripDoc) => ({ id: tripDoc.id, ...(tripDoc.data() as TripDoc) }));
 }
 
 export async function getTrip(tripId: string) {

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { onAuthStateChanged } from "firebase/auth";
@@ -15,7 +16,7 @@ import ItineraryDayScreen from "../screens/ItineraryDayScreen";
 import ExpenseDetailsScreen from "../screens/ExpenseDetailsScreen";
 import { auth } from "../firebase";
 import { getUser, upsertUserProfile } from "../api/users";
-import { listMyTrips } from "../api/trips";
+import { getTrip, listMyTrips } from "../api/trips";
 import { useTrip } from "../state/TripStore";
 import { theme } from "../theme";
 
@@ -24,18 +25,21 @@ const Stack = createNativeStackNavigator();
 export default function AppNavigator() {
   const [authReady, setAuthReady] = useState(false);
   const [isAuthed, setIsAuthed] = useState(false);
+  const [tripBootstrapDone, setTripBootstrapDone] = useState(false);
   const { selectedTripId, setCurrentUser, setSelectedTripId, setSelectedTrip, resetStore } = useTrip();
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (firebaseUser) => {
       if (!firebaseUser) {
         setIsAuthed(false);
+        setTripBootstrapDone(true);
         setAuthReady(true);
         resetStore();
         return;
       }
 
       setIsAuthed(true);
+      setTripBootstrapDone(false);
       setAuthReady(true);
       setCurrentUser({
         uid: firebaseUser.uid,
@@ -64,7 +68,32 @@ export default function AppNavigator() {
             });
           }
 
-          const myTrips = await listMyTrips(firebaseUser.uid);
+          if (freshUser?.lastTripId) {
+            const lastTrip = await getTrip(freshUser.lastTripId);
+            if (lastTrip) {
+              setSelectedTripId(lastTrip.id);
+              setSelectedTrip({
+                id: lastTrip.id,
+                name: lastTrip.name,
+                startDate: lastTrip.startDate,
+                endDate: lastTrip.endDate,
+                timezone: lastTrip.timezone,
+              });
+              return;
+            }
+          }
+
+          let myTrips: Awaited<ReturnType<typeof listMyTrips>> = [];
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            try {
+              myTrips = await listMyTrips(firebaseUser.uid);
+              if (myTrips.length > 0) break;
+            } catch {
+              // Retry a couple times for transient auth/firestore timing issues.
+            }
+            await new Promise((resolve) => setTimeout(resolve, 350));
+          }
+
           if (myTrips.length > 0) {
             const firstTrip = myTrips[0];
             setSelectedTripId(firstTrip.id);
@@ -76,13 +105,33 @@ export default function AppNavigator() {
               timezone: firstTrip.timezone,
             });
           } else {
-            setSelectedTripId(null);
-            setSelectedTrip(null);
+            const cachedTripId = await AsyncStorage.getItem(`breaksplit:lastTrip:${firebaseUser.uid}`);
+            if (cachedTripId) {
+              const cachedTrip = await getTrip(cachedTripId);
+              if (cachedTrip) {
+                setSelectedTripId(cachedTrip.id);
+                setSelectedTrip({
+                  id: cachedTrip.id,
+                  name: cachedTrip.name,
+                  startDate: cachedTrip.startDate,
+                  endDate: cachedTrip.endDate,
+                  timezone: cachedTrip.timezone,
+                });
+              } else {
+                setSelectedTripId(null);
+                setSelectedTrip(null);
+              }
+            } else {
+              setSelectedTripId(null);
+              setSelectedTrip(null);
+            }
           }
         } catch (error) {
           // Keep app usable even if Firestore bootstrap fails.
           setSelectedTripId(null);
           setSelectedTrip(null);
+        } finally {
+          setTripBootstrapDone(true);
         }
       })();
     });
@@ -90,7 +139,7 @@ export default function AppNavigator() {
     return unsub;
   }, [resetStore, setCurrentUser, setSelectedTrip, setSelectedTripId]);
 
-  if (!authReady) {
+  if (!authReady || (isAuthed && !tripBootstrapDone)) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
         <ActivityIndicator size="large" color={theme.colors.primary} />

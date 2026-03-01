@@ -1,20 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
 import { useTrip } from "../state/TripStore";
-import { computeTotals, listExpenses } from "../api/expenses";
+import { computeTotals } from "../api/expenses";
 import { getTrip, listMembers } from "../api/trips";
 import { formatCents } from "../utils/money";
-import { listRecentItineraryItems } from "../api/itinerary";
-
-type ActivityRow = {
-  id: string;
-  text: string;
-  amount?: string;
-  createdAtMs: number;
-};
 
 function formatDateRange(startDate: string, endDate: string) {
   const start = new Date(`${startDate}T00:00:00`);
@@ -38,7 +30,6 @@ export default function TripHomeScreen({ navigation }: any) {
   const [memberCount, setMemberCount] = useState(0);
   const [youOweCents, setYouOweCents] = useState(0);
   const [youreOwedCents, setYoureOwedCents] = useState(0);
-  const [activity, setActivity] = useState<ActivityRow[]>([]);
 
   useEffect(() => {
     if (!selectedTripId) {
@@ -62,31 +53,12 @@ export default function TripHomeScreen({ navigation }: any) {
           timezone: trip.timezone,
         });
 
-        const [members, expenses, itineraryRows] = await Promise.all([
-          listMembers(tripId),
-          listExpenses(tripId),
-          listRecentItineraryItems(tripId, trip.startDate, trip.endDate, 6),
-        ]);
+        const members = await listMembers(tripId);
 
         setMemberCount(members.length);
         const adjustedTotals = await computeTotals(tripId, currentUser?.uid ?? trip.createdBy);
         setYouOweCents(adjustedTotals.youOweCents);
         setYoureOwedCents(adjustedTotals.youreOwedCents);
-
-        const expenseActivity: ActivityRow[] = expenses.slice(0, 6).map((expense) => ({
-          id: `exp_${expense.id}`,
-          text: `Expense added: ${expense.title}`,
-          amount: formatCents(expense.amountCents),
-          createdAtMs: expense.createdAtMs,
-        }));
-
-        const itineraryActivity: ActivityRow[] = itineraryRows.map((row) => ({
-          id: `it_${row.id}`,
-          text: `Itinerary item: ${row.title} (${row.dayId})`,
-          createdAtMs: row.createdAtMs,
-        }));
-
-        setActivity([...expenseActivity, ...itineraryActivity].sort((a, b) => b.createdAtMs - a.createdAtMs).slice(0, 10));
       } catch (error: any) {
         Alert.alert("Load failed", error?.message ?? "Could not load trip.");
       } finally {
@@ -105,7 +77,7 @@ export default function TripHomeScreen({ navigation }: any) {
     <View style={styles.screen}>
       <View style={[styles.headerWrap, { paddingTop: insets.top + 8 }]}>
         <View>
-          <Text style={styles.headerTitle}>Trip Home</Text>
+          <Text style={styles.headerTitle}>My Trips</Text>
           <Text style={styles.headerSub}>
             {selectedTrip ? `${selectedTrip.name}` : "No trip selected"}
           </Text>
@@ -115,60 +87,34 @@ export default function TripHomeScreen({ navigation }: any) {
         </Pressable>
       </View>
 
-      <FlatList
-        contentContainerStyle={styles.content}
-        data={activity}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={
-          <View style={{ gap: 14 }}>
-            <View style={styles.card}>
-              <Text style={styles.tripTitle}>{selectedTrip?.name ?? "Loading..."}</Text>
-              <Text style={styles.metaText}>{dateText}</Text>
-              <Text style={styles.metaText}>{memberCount} members</Text>
-              <View style={styles.divider} />
-              <View style={styles.balanceRow}>
-                <View>
-                  <Text style={styles.balanceLabel}>You Owe</Text>
-                  <Text style={[styles.balanceValue, { color: toneFromAmount(youOweCents) }]}>
-                    {formatCents(youOweCents)}
-                  </Text>
-                </View>
-                <View>
-                  <Text style={styles.balanceLabel}>You're Owed</Text>
-                  <Text style={[styles.balanceValue, { color: youreOwedCents > 0 ? "#16A34A" : "#94A3B8" }]}>
-                    {formatCents(youreOwedCents)}
-                  </Text>
-                </View>
-              </View>
-            </View>
+      <View style={styles.content}>
+        <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("CreateTrip")}>
+          <Text style={styles.secondaryButtonText}> + Create / Join Another Trip</Text>
+        </Pressable>
 
-            <Pressable style={styles.createButton} onPress={() => navigation.navigate("Itinerary")}>
-              <Text style={styles.createButtonText}>Open Trip</Text>
-            </Pressable>
+        {loading ? <Text style={styles.loadingText}>Loading...</Text> : null}
 
-            <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("CreateTrip")}>
-              <Text style={styles.secondaryButtonText}>Create / Join Another Trip</Text>
-            </Pressable>
-
-            <Text style={styles.sectionTitle}>Recent Activity</Text>
-            {loading ? <Text style={styles.loadingText}>Loading...</Text> : null}
-          </View>
-        }
-        renderItem={({ item }) => (
-          <View style={styles.activityCard}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.activityText}>{item.text}</Text>
-              <Text style={styles.activitySub}>
-                {new Date(item.createdAtMs || Date.now()).toLocaleString()}
+        <Pressable style={styles.card} onPress={() => navigation.navigate("Itinerary")}>
+          <Text style={styles.tripTitle}>{selectedTrip?.name ?? "Loading..."}</Text>
+          <Text style={styles.metaText}>{dateText}</Text>
+          <Text style={styles.metaText}>{memberCount} members</Text>
+          <View style={styles.divider} />
+          <View style={styles.balanceRow}>
+            <View>
+              <Text style={styles.balanceLabel}>You Owe</Text>
+              <Text style={[styles.balanceValue, { color: toneFromAmount(youOweCents) }]}>
+                {formatCents(youOweCents)}
               </Text>
             </View>
-            {item.amount ? <Text style={styles.activityAmount}>{item.amount}</Text> : null}
+            <View>
+              <Text style={styles.balanceLabel}>You're Owed</Text>
+              <Text style={[styles.balanceValue, { color: youreOwedCents > 0 ? "#16A34A" : "#94A3B8" }]}>
+                {formatCents(youreOwedCents)}
+              </Text>
+            </View>
           </View>
-        )}
-        ListEmptyComponent={
-          !loading ? <Text style={styles.loadingText}>No activity yet.</Text> : null
-        }
-      />
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -248,18 +194,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     fontSize: 17,
   },
-  createButton: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: 14,
-    height: 52,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  createButtonText: {
-    color: "white",
-    fontSize: 18,
-    fontWeight: "800",
-  },
   secondaryButton: {
     backgroundColor: "white",
     borderRadius: 14,
@@ -273,39 +207,8 @@ const styles = StyleSheet.create({
     color: "#1E40AF",
     fontWeight: "800",
   },
-  sectionTitle: {
-    marginTop: 10,
-    fontWeight: "900",
-    color: "#0F172A",
-    fontSize: 18,
-  },
   loadingText: {
     color: "#64748B",
     fontSize: 14,
-  },
-  activityCard: {
-    backgroundColor: "white",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 14,
-    padding: 12,
-    marginTop: 10,
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "center",
-  },
-  activityText: {
-    color: "#0F172A",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  activitySub: {
-    marginTop: 2,
-    color: "#64748B",
-    fontSize: 12,
-  },
-  activityAmount: {
-    fontWeight: "800",
-    color: "#0F172A",
   },
 });

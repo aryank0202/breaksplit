@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
 import { createTrip, getTrip, joinTripByInviteCode } from "../api/trips";
 import { useTrip } from "../state/TripStore";
+import { setUserLastTrip } from "../api/users";
 
 function digitsOnly(value: string) {
   return value.replace(/[^\d]/g, "");
@@ -44,19 +45,18 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs = 20000) {
 
 export default function CreateTripScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { setSelectedTripId, setSelectedTrip } = useTrip();
+  const { currentUser, setSelectedTripId, setSelectedTrip } = useTrip();
   const [tripName, setTripName] = useState("");
   const [tripDurationDays, setTripDurationDays] = useState("");
-  const [tripTimezone, setTripTimezone] = useState(
-    Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York"
-  );
+  const [peopleCount, setPeopleCount] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [loadingCreate, setLoadingCreate] = useState(false);
   const [loadingJoin, setLoadingJoin] = useState(false);
+  const deviceTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York";
 
   const canCreate = useMemo(
-    () => tripName.trim().length > 0 && tripDurationDays.trim().length > 0 && tripTimezone.trim().length > 0,
-    [tripDurationDays, tripName, tripTimezone]
+    () => tripName.trim().length > 0 && tripDurationDays.trim().length > 0 && peopleCount.trim().length > 0,
+    [peopleCount, tripDurationDays, tripName]
   );
 
   async function applySelectedTrip(tripId: string) {
@@ -80,6 +80,11 @@ export default function CreateTripScreen({ navigation }: any) {
       Alert.alert("Invalid duration", "Trip duration must be a positive number.");
       return;
     }
+    const members = parseInt(peopleCount, 10);
+    if (!Number.isInteger(members) || members <= 0) {
+      Alert.alert("Invalid members", "Number of people must be a positive whole number.");
+      return;
+    }
 
     try {
       setLoadingCreate(true);
@@ -92,10 +97,13 @@ export default function CreateTripScreen({ navigation }: any) {
           name: tripName.trim(),
           startDate,
           endDate,
-          timezone: tripTimezone.trim(),
+          timezone: deviceTimezone,
         }),
         20000
       );
+      if (currentUser?.uid) {
+        await setUserLastTrip(currentUser.uid, tripId);
+      }
       // Avoid a second Firestore read on create flow; we already have the needed trip payload.
       setSelectedTripId(tripId);
       setSelectedTrip({
@@ -103,7 +111,7 @@ export default function CreateTripScreen({ navigation }: any) {
         name: tripName.trim(),
         startDate,
         endDate,
-        timezone: tripTimezone.trim(),
+        timezone: deviceTimezone,
       });
       navigation.replace("TripHome");
       Alert.alert("Trip created", `Invite code: ${code}`);
@@ -122,6 +130,9 @@ export default function CreateTripScreen({ navigation }: any) {
     try {
       setLoadingJoin(true);
       const { tripId } = await withTimeout(joinTripByInviteCode(inviteCode), 20000);
+      if (currentUser?.uid) {
+        await setUserLastTrip(currentUser.uid, tripId);
+      }
       await withTimeout(applySelectedTrip(tripId), 20000);
     } catch (error: any) {
       Alert.alert("Join failed", error?.message ?? "Unable to join trip.");
@@ -180,14 +191,15 @@ export default function CreateTripScreen({ navigation }: any) {
           </View>
 
           <View style={styles.fieldBlock}>
-            <Text style={styles.fieldLabel}>Timezone</Text>
+            <Text style={styles.fieldLabel}>Number of People</Text>
             <View style={styles.inputWrap}>
-              <Feather name="clock" size={18} color="#94A3B8" />
+              <Feather name="users" size={18} color="#94A3B8" />
               <TextInput
-                value={tripTimezone}
-                onChangeText={setTripTimezone}
-                placeholder="America/New_York"
+                value={peopleCount}
+                onChangeText={(v) => setPeopleCount(digitsOnly(v))}
+                placeholder="How many people?"
                 placeholderTextColor="#9CA3AF"
+                keyboardType="number-pad"
                 style={styles.input}
               />
             </View>

@@ -31,3 +31,8 @@ export async function getUser(uid: string) {
   if (!snap.exists()) return null;
   return { uid, ...(snap.data() as UserDoc) };
 }
+
+export async function setUserLastTrip(uid: string, tripId: string) {
+  const ref = doc(db, "users", uid);
+  await setDoc(ref, { lastTripId: tripId }, { merge: true });
+}
