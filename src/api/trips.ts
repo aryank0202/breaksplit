@@ -11,6 +11,7 @@ import {
   setDoc,
   where,
   writeBatch,
+  deleteDoc,
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import type { TripDoc, TripMember, TripMemberDoc, UserDoc } from "../types/backend";
@@ -72,6 +73,10 @@ export async function createTrip({ name, startDate, endDate, timezone }: CreateT
 
   await batch.commit();
   return { tripId: tripRef.id, inviteCode };
+}
+
+export async function deleteTrip(tripId: string) {
+  await deleteDoc(doc(db, "trips", tripId));
 }
 
 export async function joinTripByInviteCode(code: string) {

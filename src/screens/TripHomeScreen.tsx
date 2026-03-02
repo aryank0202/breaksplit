@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
 import { useTrip } from "../state/TripStore";
 import { computeTotals } from "../api/expenses";
-import { listMembers, listMyTrips } from "../api/trips";
+import { listMembers, listMyTrips, deleteTrip} from "../api/trips";
 import { formatCents } from "../utils/money";
 
 function formatDateRange(startDate: string, endDate: string) {
@@ -80,12 +80,6 @@ export default function TripHomeScreen({ navigation }: any) {
     void load();
   }, [currentUser?.uid]);
 
-  const subtitle = useMemo(() => {
-    if (loading) return "Loading trips...";
-    if (tripCards.length === 0) return "No trips yet";
-    if (selectedTrip) return selectedTrip.name;
-    return `${tripCards.length} trip${tripCards.length === 1 ? "" : "s"}`;
-  }, [loading, selectedTrip, tripCards.length]);
 
   const selectedDateText = useMemo(() => {
     if (!selectedTrip) return "";
@@ -104,12 +98,33 @@ export default function TripHomeScreen({ navigation }: any) {
     navigation.navigate("Itinerary");
   }
 
+  async function onDeleteTrip(cardId: string, tripName: string) {
+  Alert.alert(
+    "Delete Trip",
+    `Are you sure you want to delete "${tripName}"? This cannot be undone.`,
+    [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteTrip(cardId);
+            setTripCards((prev) => prev.filter((t) => t.id !== cardId));
+          } catch (error: any) {
+            Alert.alert("Delete failed", error?.message ?? "Could not delete trip.");
+          }
+        },
+      },
+    ]
+  );
+}
+
   return (
     <View style={styles.screen}>
       <View style={[styles.headerWrap, { paddingTop: insets.top + 8 }]}>
         <View>
           <Text style={styles.headerTitle}>My Trips</Text>
-          <Text style={styles.headerSub}>{subtitle}</Text>
         </View>
         <Pressable onPress={() => navigation.navigate("Profile")} style={styles.profileIcon}>
           <Feather name="user" size={18} color={theme.colors.muted} />
@@ -128,8 +143,20 @@ export default function TripHomeScreen({ navigation }: any) {
         ) : null}
 
         {tripCards.map((card) => (
-          <Pressable key={card.id} style={styles.card} onPress={() => onOpenTrip(card)}>
-            <Text style={styles.tripTitle}>{card.name}</Text>
+          <View key={card.id} style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Pressable onPress={() => onOpenTrip(card)} style={{ flex: 1 }}>
+                <Text style={styles.tripTitle}>{card.name}</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => onDeleteTrip(card.id, card.name)}
+                hitSlop={10}
+                style={styles.deleteIcon}
+              >
+                <Feather name="trash-2" size={16} color="#DC2626" />
+              </Pressable>
+            </View>
             <Text style={styles.metaText}>
               {selectedTrip?.id === card.id ? selectedDateText : formatDateRange(card.startDate, card.endDate)}
             </Text>
@@ -149,7 +176,7 @@ export default function TripHomeScreen({ navigation }: any) {
                 </Text>
               </View>
             </View>
-          </Pressable>
+          </View>
         ))}
       </ScrollView>
     </View>
@@ -207,6 +234,15 @@ const styles = StyleSheet.create({
     color: "#0F172A",
     fontWeight: "900",
     fontSize: 20,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  deleteIcon: {
+    padding: 6,
+    borderRadius: 8,
   },
   metaText: {
     color: "#334155",
