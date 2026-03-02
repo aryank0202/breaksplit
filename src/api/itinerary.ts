@@ -40,19 +40,24 @@ function dateRange(start: string, end: string) {
 export async function addItineraryItem(tripId: string, dayId: string, item: AddItemInput) {
   const uid = requireUid();
   const itemRef = doc(collection(db, "trips", tripId, "itinerary", dayId, "items"));
-  await setDoc(itemRef, {
-    time: item.time?.trim() || undefined,
+  const payload: Record<string, unknown> = {
     title: item.title.trim(),
-    locationName: item.locationName?.trim() || undefined,
-    locationUrl: item.locationUrl?.trim() || undefined,
-    notes: item.notes?.trim() || undefined,
     createdBy: uid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  } satisfies Omit<ItineraryItemDoc, "createdAt" | "updatedAt"> & {
-    createdAt: unknown;
-    updatedAt: unknown;
-  });
+  };
+
+  const time = item.time?.trim();
+  const locationName = item.locationName?.trim();
+  const locationUrl = item.locationUrl?.trim();
+  const notes = item.notes?.trim();
+
+  if (time) payload.time = time;
+  if (locationName) payload.locationName = locationName;
+  if (locationUrl) payload.locationUrl = locationUrl;
+  if (notes) payload.notes = notes;
+
+  await setDoc(itemRef, payload);
   return itemRef.id;
 }
 
@@ -73,10 +78,17 @@ export async function updateItineraryItem(
   itemId: string,
   patch: Partial<Omit<ItineraryItemDoc, "createdBy" | "createdAt" | "updatedAt">>
 ) {
-  await updateDoc(doc(db, "trips", tripId, "itinerary", dayId, "items", itemId), {
-    ...patch,
+  const payload: Record<string, unknown> = {
     updatedAt: serverTimestamp(),
-  });
+  };
+
+  if (patch.title !== undefined) payload.title = patch.title.trim();
+  if (patch.time !== undefined) payload.time = patch.time?.trim() || null;
+  if (patch.locationName !== undefined) payload.locationName = patch.locationName?.trim() || null;
+  if (patch.locationUrl !== undefined) payload.locationUrl = patch.locationUrl?.trim() || null;
+  if (patch.notes !== undefined) payload.notes = patch.notes?.trim() || null;
+
+  await updateDoc(doc(db, "trips", tripId, "itinerary", dayId, "items", itemId), payload);
 }
 
 export async function deleteItineraryItem(tripId: string, dayId: string, itemId: string) {

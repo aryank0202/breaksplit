@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Feather } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -28,6 +29,7 @@ type TimelineItem = {
   title: string;
   locationName?: string;
   notes?: string;
+  createdAtMs: number;
 };
 
 function toIsoDate(date: Date) {
@@ -46,6 +48,33 @@ function dayRange(startDate: string, endDate: string) {
   return out;
 }
 
+function formatTime(date: Date) {
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function parseTimeStringToDate(value?: string) {
+  if (!value) return null;
+  const match = value.trim().toUpperCase().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  if (!match) return null;
+  let hour = parseInt(match[1], 10);
+  const minute = parseInt(match[2], 10);
+  const period = match[3];
+  if (period === "AM") {
+    if (hour === 12) hour = 0;
+  } else if (hour !== 12) {
+    hour += 12;
+  }
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+  return date;
+}
+
+function timeToMinutes(value?: string) {
+  const parsed = parseTimeStringToDate(value);
+  if (!parsed) return Number.MAX_SAFE_INTEGER;
+  return parsed.getHours() * 60 + parsed.getMinutes();
+}
+
 export default function ItineraryDayScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { selectedTripId, selectedTrip } = useTrip();
@@ -58,8 +87,10 @@ export default function ItineraryDayScreen({ navigation }: any) {
   const [items, setItems] = useState<TimelineItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
-  const [newTime, setNewTime] = useState("");
+  const [newTime, setNewTime] = useState<Date | null>(null);
+  const [draftTime, setDraftTime] = useState<Date>(new Date());
   const [newTitle, setNewTitle] = useState("");
   const [newLocation, setNewLocation] = useState("");
   const [newNotes, setNewNotes] = useState("");
@@ -72,15 +103,22 @@ export default function ItineraryDayScreen({ navigation }: any) {
     try {
       setLoading(true);
       const rows = await listItineraryItems(selectedTripId, selectedDayId);
-      setItems(
-        rows.map((row) => ({
+      const normalized = rows
+        .map((row) => ({
           id: row.id,
           time: row.time,
           title: row.title,
           locationName: row.locationName,
           notes: row.notes,
+          createdAtMs: row.createdAt?.toMillis?.() ?? 0,
         }))
-      );
+        .sort((a, b) => {
+          const aTime = timeToMinutes(a.time);
+          const bTime = timeToMinutes(b.time);
+          if (aTime !== bTime) return aTime - bTime;
+          return a.createdAtMs - b.createdAtMs;
+        });
+      setItems(normalized);
     } catch (error: any) {
       Alert.alert("Error", error?.message ?? "Could not load itinerary.");
     } finally {
@@ -94,7 +132,9 @@ export default function ItineraryDayScreen({ navigation }: any) {
 
   function resetForm() {
     setEditingItemId(null);
-    setNewTime("");
+    setNewTime(null);
+    setDraftTime(new Date());
+    setShowTimePicker(false);
     setNewTitle("");
     setNewLocation("");
     setNewNotes("");
@@ -112,7 +152,9 @@ export default function ItineraryDayScreen({ navigation }: any) {
 
   function onStartEdit(item: TimelineItem) {
     setEditingItemId(item.id);
-    setNewTime(item.time ?? "");
+    const parsed = parseTimeStringToDate(item.time);
+    setNewTime(parsed);
+    setDraftTime(parsed ?? new Date());
     setNewTitle(item.title);
     setNewLocation(item.locationName ?? "");
     setNewNotes(item.notes ?? "");
@@ -124,14 +166,14 @@ export default function ItineraryDayScreen({ navigation }: any) {
     try {
       if (editingItemId) {
         await updateItineraryItem(selectedTripId, selectedDayId, editingItemId, {
-          time: newTime.trim() || undefined,
+          time: newTime ? formatTime(newTime) : undefined,
           title: newTitle.trim(),
           locationName: newLocation.trim() || undefined,
           notes: newNotes.trim() || undefined,
         });
       } else {
         await addItineraryItem(selectedTripId, selectedDayId, {
-          time: newTime.trim() || undefined,
+          time: newTime ? formatTime(newTime) : undefined,
           title: newTitle.trim(),
           locationName: newLocation.trim() || undefined,
           notes: newNotes.trim() || undefined,
@@ -240,16 +282,46 @@ export default function ItineraryDayScreen({ navigation }: any) {
               </View>
 
               <Text style={styles.fieldLabel}>Time (optional)</Text>
-              <View style={styles.inputShell}>
+              <Pressable
+                style={styles.inputShell}
+                onPress={() => {
+                  setDraftTime(newTime ?? new Date());
+                  setShowTimePicker(true);
+                }}
+              >
                 <Feather name="clock" size={18} color="#9CA3AF" />
-                <TextInput
-                  value={newTime}
-                  onChangeText={setNewTime}
-                  placeholder="e.g. 9:00 AM"
-                  placeholderTextColor="#9CA3AF"
-                  style={styles.inputText}
-                />
-              </View>
+                <Text style={[styles.inputText, !newTime ? styles.placeholderText : null]}>
+                  {newTime ? formatTime(newTime) : "Select time"}
+                </Text>
+              </Pressable>
+              {showTimePicker ? (
+                <View style={styles.pickerWrap}>
+                  <DateTimePicker
+                    value={draftTime}
+                    mode="time"
+                    display="spinner"
+                    textColor="#111827"
+                    themeVariant="light"
+                    onChange={(_, selected) => {
+                      if (selected) setDraftTime(selected);
+                    }}
+                  />
+                  <View style={styles.pickerActions}>
+                    <Pressable onPress={() => setShowTimePicker(false)} style={styles.pickerActionButton}>
+                      <Text style={styles.pickerActionText}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        setNewTime(draftTime);
+                        setShowTimePicker(false);
+                      }}
+                      style={styles.pickerActionButton}
+                    >
+                      <Text style={[styles.pickerActionText, { color: theme.colors.primary }]}>Set Time</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
 
               <Text style={styles.fieldLabel}>Event Title</Text>
               <View style={styles.inputShell}>
@@ -520,6 +592,34 @@ const styles = StyleSheet.create({
     color: "#1F2937",
     fontSize: 14,
     paddingVertical: 0,
+  },
+  placeholderText: {
+    color: "#9CA3AF",
+  },
+  pickerWrap: {
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    backgroundColor: "white",
+    overflow: "hidden",
+  },
+  pickerActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingBottom: 10,
+  },
+  pickerActionButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  pickerActionText: {
+    color: "#6B7280",
+    fontSize: 13,
+    fontWeight: "700",
   },
   notesShell: {
     minHeight: 92,
