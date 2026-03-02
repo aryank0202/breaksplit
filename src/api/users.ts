@@ -1,4 +1,4 @@
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { arrayUnion, doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import type { UserDoc } from "../types/backend";
 
@@ -14,9 +14,10 @@ export async function upsertUserProfile(uid: string, payload: UpsertPayload) {
 
   const nextData: Record<string, unknown> = {
     displayName: payload.displayName.trim(),
-    venmoHandle: payload.venmoHandle?.trim() || undefined,
     email: payload.email ?? auth.currentUser?.email ?? "",
   };
+  const venmoHandle = payload.venmoHandle?.trim();
+  if (venmoHandle) nextData.venmoHandle = venmoHandle;
 
   if (!existing.exists()) {
     nextData.createdAt = serverTimestamp();
@@ -35,4 +36,16 @@ export async function getUser(uid: string) {
 export async function setUserLastTrip(uid: string, tripId: string) {
   const ref = doc(db, "users", uid);
   await setDoc(ref, { lastTripId: tripId }, { merge: true });
+}
+
+export async function addUserTrip(uid: string, tripId: string) {
+  const ref = doc(db, "users", uid);
+  await setDoc(
+    ref,
+    {
+      lastTripId: tripId,
+      joinedTripIds: arrayUnion(tripId),
+    },
+    { merge: true }
+  );
 }

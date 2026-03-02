@@ -5,6 +5,7 @@ export type UserDoc = {
   email: string;
   venmoHandle?: string;
   lastTripId?: string;
+  joinedTripIds?: string[];
   createdAt: Timestamp | null;
 };
 

@@ -14,6 +14,7 @@ import {
   deleteDoc,
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
+import { getUser } from "./users";
 import type { TripDoc, TripMember, TripMemberDoc, UserDoc } from "../types/backend";
 
 type CreateTripInput = {
@@ -81,7 +82,7 @@ export async function deleteTrip(tripId: string) {
 
 export async function joinTripByInviteCode(code: string) {
   const uid = requireUid();
-  const normalized = code.trim().toUpperCase();
+  const normalized = code.replace(/\s+/g, "").trim().toUpperCase();
   const q = query(collection(db, "trips"), where("inviteCode", "==", normalized), limit(1));
   const snap = await getDocs(q);
   if (snap.empty) {
@@ -104,15 +105,28 @@ export async function joinTripByInviteCode(code: string) {
 
 export async function listMyTrips(uid: string) {
   let tripIds: string[] = [];
+  try {
+    const userDoc = await getUser(uid);
+    if (userDoc?.joinedTripIds?.length) {
+      tripIds.push(...userDoc.joinedTripIds);
+    }
+    if (userDoc?.lastTripId) {
+      tripIds.push(userDoc.lastTripId);
+    }
+  } catch {
+    // Fallback to membership-based lookups.
+  }
 
   // Preferred path for new membership docs that include uid.
-  try {
-    const memberships = await getDocs(query(collectionGroup(db, "members"), where("uid", "==", uid)));
-    tripIds = memberships.docs
-      .map((membershipDoc) => membershipDoc.ref.parent.parent?.id)
-      .filter((tripId): tripId is string => Boolean(tripId));
-  } catch {
-    tripIds = [];
+  if (tripIds.length === 0) {
+    try {
+      const memberships = await getDocs(query(collectionGroup(db, "members"), where("uid", "==", uid)));
+      tripIds = memberships.docs
+        .map((membershipDoc) => membershipDoc.ref.parent.parent?.id)
+        .filter((tripId): tripId is string => Boolean(tripId));
+    } catch {
+      tripIds = [];
+    }
   }
 
   // Fallback: scan trips and check member doc directly (supports existing docs without uid field).
@@ -120,8 +134,13 @@ export async function listMyTrips(uid: string) {
     const tripsSnap = await getDocs(collection(db, "trips"));
     const checks = await Promise.all(
       tripsSnap.docs.map(async (tripDoc) => {
-        const memberDoc = await getDoc(doc(db, "trips", tripDoc.id, "members", uid));
-        return memberDoc.exists() ? tripDoc.id : null;
+        try {
+          const memberDoc = await getDoc(doc(db, "trips", tripDoc.id, "members", uid));
+          return memberDoc.exists() ? tripDoc.id : null;
+        } catch {
+          // Ignore trips that this user cannot read membership for.
+          return null;
+        }
       })
     );
     tripIds = checks.filter((tripId): tripId is string => Boolean(tripId));
@@ -138,8 +157,18 @@ export async function listMyTrips(uid: string) {
   const uniqueTripIds = [...new Set(tripIds)];
   if (uniqueTripIds.length === 0) return [];
 
-  const docs = await Promise.all(uniqueTripIds.map((tripId) => getDoc(doc(db, "trips", tripId))));
-  return docs.filter((tripDoc) => tripDoc.exists()).map((tripDoc) => ({ id: tripDoc.id, ...(tripDoc.data() as TripDoc) }));
+  const docs = await Promise.all(
+    uniqueTripIds.map(async (tripId) => {
+      try {
+        return await getDoc(doc(db, "trips", tripId));
+      } catch {
+        return null;
+      }
+    })
+  );
+  return docs
+    .filter((tripDoc): tripDoc is Exclude<(typeof docs)[number], null> => Boolean(tripDoc && tripDoc.exists()))
+    .map((tripDoc) => ({ id: tripDoc.id, ...(tripDoc.data() as TripDoc) }));
 }
 
 export async function getTrip(tripId: string) {
@@ -160,17 +189,23 @@ export async function listMembers(tripId: string): Promise<TripMember[]> {
   const userDocMap = new Map<string, UserDoc>();
   const memberUids = memberDocs.map((member) => member.uid);
   for (const uidChunk of chunk(memberUids, 10)) {
-    const userSnap = await getDocs(query(collection(db, "users"), where(documentId(), "in", uidChunk)));
-    userSnap.forEach((snap) => userDocMap.set(snap.id, snap.data() as UserDoc));
+    try {
+      const userSnap = await getDocs(query(collection(db, "users"), where(documentId(), "in", uidChunk)));
+      userSnap.forEach((snap) => userDocMap.set(snap.id, snap.data() as UserDoc));
+    } catch {
+      // Some rulesets only allow reading your own user doc.
+      // Keep members usable with fallback labels instead of failing the whole request.
+    }
   }
 
   return memberDocs.map((member) => {
     const user = userDocMap.get(member.uid);
+    const fallbackName = member.uid === auth.currentUser?.uid ? "You" : `Member ${member.uid.slice(0, 6)}`;
     return {
       uid: member.uid,
       role: member.role,
       joinedAt: member.joinedAt,
-      displayName: user?.displayName ?? "Unknown",
+      displayName: user?.displayName ?? fallbackName,
       email: user?.email ?? "",
       venmoHandle: user?.venmoHandle,
     };

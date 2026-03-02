@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
 import { createTrip, getTrip, joinTripByInviteCode } from "../api/trips";
 import { useTrip } from "../state/TripStore";
-import { setUserLastTrip } from "../api/users";
+import { addUserTrip } from "../api/users";
 
 function digitsOnly(value: string) {
   return value.replace(/[^\d]/g, "");
@@ -61,7 +61,9 @@ export default function CreateTripScreen({ navigation }: any) {
 
   async function applySelectedTrip(tripId: string) {
     const trip = await getTrip(tripId);
-    if (!trip) return;
+    if (!trip) {
+      throw new Error("Joined trip, but could not load trip details.");
+    }
     setSelectedTripId(tripId);
     setSelectedTrip({
       id: trip.id,
@@ -102,7 +104,11 @@ export default function CreateTripScreen({ navigation }: any) {
         20000
       );
       if (currentUser?.uid) {
-        await setUserLastTrip(currentUser.uid, tripId);
+        try {
+          await addUserTrip(currentUser.uid, tripId);
+        } catch {
+          // Non-blocking: trip creation should still succeed even if user metadata write fails.
+        }
       }
       // Avoid a second Firestore read on create flow; we already have the needed trip payload.
       setSelectedTripId(tripId);
@@ -123,15 +129,20 @@ export default function CreateTripScreen({ navigation }: any) {
   }
 
   async function onJoinTrip() {
-    if (!inviteCode.trim()) {
+    const normalizedInviteCode = inviteCode.replace(/\s+/g, "").toUpperCase();
+    if (!normalizedInviteCode) {
       Alert.alert("Invite code needed", "Enter an invite code.");
       return;
     }
     try {
       setLoadingJoin(true);
-      const { tripId } = await withTimeout(joinTripByInviteCode(inviteCode), 20000);
+      const { tripId } = await withTimeout(joinTripByInviteCode(normalizedInviteCode), 20000);
       if (currentUser?.uid) {
-        await setUserLastTrip(currentUser.uid, tripId);
+        try {
+          await addUserTrip(currentUser.uid, tripId);
+        } catch {
+          // Non-blocking: membership write succeeded, so proceed even if metadata write fails.
+        }
       }
       await withTimeout(applySelectedTrip(tripId), 20000);
     } catch (error: any) {

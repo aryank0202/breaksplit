@@ -54,23 +54,27 @@ export default function TripHomeScreen({ navigation }: any) {
         const trips = await listMyTrips(uid);
         const cards = await Promise.all(
           trips.map(async (trip) => {
-            const [members, totals] = await Promise.all([
-              listMembers(trip.id),
-              computeTotals(trip.id, uid),
-            ]);
-            return {
-              id: trip.id,
-              name: trip.name,
-              startDate: trip.startDate,
-              endDate: trip.endDate,
-              timezone: trip.timezone,
-              memberCount: members.length,
-              youOweCents: totals.youOweCents,
-              youreOwedCents: totals.youreOwedCents,
-            };
+            try {
+              const [members, totals] = await Promise.all([
+                listMembers(trip.id),
+                computeTotals(trip.id, uid),
+              ]);
+              return {
+                id: trip.id,
+                name: trip.name,
+                startDate: trip.startDate,
+                endDate: trip.endDate,
+                timezone: trip.timezone,
+                memberCount: members.length,
+                youOweCents: totals.youOweCents,
+                youreOwedCents: totals.youreOwedCents,
+              };
+            } catch {
+              return null;
+            }
           })
         );
-        setTripCards(cards);
+        setTripCards(cards.filter((card): card is Exclude<(typeof cards)[number], null> => Boolean(card)));
       } catch (error: any) {
         Alert.alert("Load failed", error?.message ?? "Could not load trip.");
       } finally {
