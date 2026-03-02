@@ -65,6 +65,7 @@ export async function createTrip({ name, startDate, endDate, timezone }: CreateT
   } as Record<string, unknown>);
 
   batch.set(doc(db, "trips", tripRef.id, "members", uid), {
+    uid,
     role: "admin",
     joinedAt: serverTimestamp(),
   } as Record<string, unknown>);
@@ -86,6 +87,7 @@ export async function joinTripByInviteCode(code: string) {
   await setDoc(
     doc(db, "trips", tripDoc.id, "members", uid),
     {
+      uid,
       role: "member",
       joinedAt: serverTimestamp(),
     } as Record<string, unknown>,
@@ -96,13 +98,19 @@ export async function joinTripByInviteCode(code: string) {
 }
 
 export async function listMyTrips(uid: string) {
-  const memberships = await getDocs(query(collectionGroup(db, "members"), where(documentId(), "==", uid)));
+  let tripIds: string[] = [];
 
-  let tripIds = memberships.docs
-    .map((membershipDoc) => membershipDoc.ref.parent.parent?.id)
-    .filter((tripId): tripId is string => Boolean(tripId));
+  // Preferred path for new membership docs that include uid.
+  try {
+    const memberships = await getDocs(query(collectionGroup(db, "members"), where("uid", "==", uid)));
+    tripIds = memberships.docs
+      .map((membershipDoc) => membershipDoc.ref.parent.parent?.id)
+      .filter((tripId): tripId is string => Boolean(tripId));
+  } catch {
+    tripIds = [];
+  }
 
-  // Fallback: if collectionGroup query returns nothing, scan trips and check member doc directly.
+  // Fallback: scan trips and check member doc directly (supports existing docs without uid field).
   if (tripIds.length === 0) {
     const tripsSnap = await getDocs(collection(db, "trips"));
     const checks = await Promise.all(

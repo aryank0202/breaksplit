@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
 import { useTrip } from "../state/TripStore";
 import { computeTotals } from "../api/expenses";
-import { getTrip, listMembers } from "../api/trips";
+import { listMembers, listMyTrips } from "../api/trips";
 import { formatCents } from "../utils/money";
 
 function formatDateRange(startDate: string, endDate: string) {
@@ -25,40 +25,52 @@ function toneFromAmount(value: number) {
 
 export default function TripHomeScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { selectedTripId, selectedTrip, setSelectedTrip, currentUser } = useTrip();
+  const { setSelectedTripId, selectedTrip, setSelectedTrip, currentUser } = useTrip();
   const [loading, setLoading] = useState(true);
-  const [memberCount, setMemberCount] = useState(0);
-  const [youOweCents, setYouOweCents] = useState(0);
-  const [youreOwedCents, setYoureOwedCents] = useState(0);
+  const [tripCards, setTripCards] = useState<
+    Array<{
+      id: string;
+      name: string;
+      startDate: string;
+      endDate: string;
+      timezone: string;
+      memberCount: number;
+      youOweCents: number;
+      youreOwedCents: number;
+    }>
+  >([]);
 
   useEffect(() => {
-    if (!selectedTripId) {
-      navigation.replace("CreateTrip");
+    if (!currentUser?.uid) {
+      setTripCards([]);
+      setLoading(false);
       return;
     }
-    const tripId = selectedTripId;
+    const uid = currentUser.uid;
+
     async function load() {
       try {
         setLoading(true);
-        const trip = await getTrip(tripId);
-        if (!trip) {
-          navigation.replace("CreateTrip");
-          return;
-        }
-        setSelectedTrip({
-          id: trip.id,
-          name: trip.name,
-          startDate: trip.startDate,
-          endDate: trip.endDate,
-          timezone: trip.timezone,
-        });
-
-        const members = await listMembers(tripId);
-
-        setMemberCount(members.length);
-        const adjustedTotals = await computeTotals(tripId, currentUser?.uid ?? trip.createdBy);
-        setYouOweCents(adjustedTotals.youOweCents);
-        setYoureOwedCents(adjustedTotals.youreOwedCents);
+        const trips = await listMyTrips(uid);
+        const cards = await Promise.all(
+          trips.map(async (trip) => {
+            const [members, totals] = await Promise.all([
+              listMembers(trip.id),
+              computeTotals(trip.id, uid),
+            ]);
+            return {
+              id: trip.id,
+              name: trip.name,
+              startDate: trip.startDate,
+              endDate: trip.endDate,
+              timezone: trip.timezone,
+              memberCount: members.length,
+              youOweCents: totals.youOweCents,
+              youreOwedCents: totals.youreOwedCents,
+            };
+          })
+        );
+        setTripCards(cards);
       } catch (error: any) {
         Alert.alert("Load failed", error?.message ?? "Could not load trip.");
       } finally {
@@ -66,55 +78,80 @@ export default function TripHomeScreen({ navigation }: any) {
       }
     }
     void load();
-  }, [currentUser?.uid, navigation, selectedTripId, setSelectedTrip]);
+  }, [currentUser?.uid]);
 
-  const dateText = useMemo(() => {
+  const subtitle = useMemo(() => {
+    if (loading) return "Loading trips...";
+    if (tripCards.length === 0) return "No trips yet";
+    if (selectedTrip) return selectedTrip.name;
+    return `${tripCards.length} trip${tripCards.length === 1 ? "" : "s"}`;
+  }, [loading, selectedTrip, tripCards.length]);
+
+  const selectedDateText = useMemo(() => {
     if (!selectedTrip) return "";
     return formatDateRange(selectedTrip.startDate, selectedTrip.endDate);
   }, [selectedTrip]);
+
+  function onOpenTrip(card: (typeof tripCards)[number]) {
+    setSelectedTripId(card.id);
+    setSelectedTrip({
+      id: card.id,
+      name: card.name,
+      startDate: card.startDate,
+      endDate: card.endDate,
+      timezone: card.timezone,
+    });
+    navigation.navigate("Itinerary");
+  }
 
   return (
     <View style={styles.screen}>
       <View style={[styles.headerWrap, { paddingTop: insets.top + 8 }]}>
         <View>
           <Text style={styles.headerTitle}>My Trips</Text>
-          <Text style={styles.headerSub}>
-            {selectedTrip ? `${selectedTrip.name}` : "No trip selected"}
-          </Text>
+          <Text style={styles.headerSub}>{subtitle}</Text>
         </View>
         <Pressable onPress={() => navigation.navigate("Profile")} style={styles.profileIcon}>
           <Feather name="user" size={18} color={theme.colors.muted} />
         </Pressable>
       </View>
 
-      <View style={styles.content}>
+      <ScrollView contentContainerStyle={styles.content}>
         <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("CreateTrip")}>
           <Text style={styles.secondaryButtonText}> + Create / Join Another Trip</Text>
         </Pressable>
 
         {loading ? <Text style={styles.loadingText}>Loading...</Text> : null}
 
-        <Pressable style={styles.card} onPress={() => navigation.navigate("Itinerary")}>
-          <Text style={styles.tripTitle}>{selectedTrip?.name ?? "Loading..."}</Text>
-          <Text style={styles.metaText}>{dateText}</Text>
-          <Text style={styles.metaText}>{memberCount} members</Text>
-          <View style={styles.divider} />
-          <View style={styles.balanceRow}>
-            <View>
-              <Text style={styles.balanceLabel}>You Owe</Text>
-              <Text style={[styles.balanceValue, { color: toneFromAmount(youOweCents) }]}>
-                {formatCents(youOweCents)}
-              </Text>
+        {!loading && tripCards.length === 0 ? (
+          <Text style={styles.loadingText}>Create your first trip to get started.</Text>
+        ) : null}
+
+        {tripCards.map((card) => (
+          <Pressable key={card.id} style={styles.card} onPress={() => onOpenTrip(card)}>
+            <Text style={styles.tripTitle}>{card.name}</Text>
+            <Text style={styles.metaText}>
+              {selectedTrip?.id === card.id ? selectedDateText : formatDateRange(card.startDate, card.endDate)}
+            </Text>
+            <Text style={styles.metaText}>{card.memberCount} members</Text>
+            <View style={styles.divider} />
+            <View style={styles.balanceRow}>
+              <View>
+                <Text style={styles.balanceLabel}>You Owe</Text>
+                <Text style={[styles.balanceValue, { color: toneFromAmount(card.youOweCents) }]}>
+                  {formatCents(card.youOweCents)}
+                </Text>
+              </View>
+              <View>
+                <Text style={styles.balanceLabel}>You're Owed</Text>
+                <Text style={[styles.balanceValue, { color: card.youreOwedCents > 0 ? "#16A34A" : "#94A3B8" }]}>
+                  {formatCents(card.youreOwedCents)}
+                </Text>
+              </View>
             </View>
-            <View>
-              <Text style={styles.balanceLabel}>You're Owed</Text>
-              <Text style={[styles.balanceValue, { color: youreOwedCents > 0 ? "#16A34A" : "#94A3B8" }]}>
-                {formatCents(youreOwedCents)}
-              </Text>
-            </View>
-          </View>
-        </Pressable>
-      </View>
+          </Pressable>
+        ))}
+      </ScrollView>
     </View>
   );
 }
