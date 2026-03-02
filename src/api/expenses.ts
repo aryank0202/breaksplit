@@ -62,18 +62,20 @@ export async function createExpense(tripId: string, input: CreateExpenseInput) {
   const splitMap = buildSplitMap(input);
   const expenseRef = doc(collection(db, "trips", tripId, "expenses"));
   const batch = writeBatch(db);
-
-  batch.set(expenseRef, {
+  const note = input.note?.trim();
+  const expensePayload: Record<string, unknown> = {
     title: input.title.trim(),
     amountCents: input.amountCents,
     currency: "USD",
     payerUid: input.payerUid,
     participantUids: input.participantUids,
     splitType: input.splitType,
-    note: input.note?.trim() || undefined,
     createdBy,
     createdAt: serverTimestamp(),
-  } as Record<string, unknown>);
+  };
+  if (note) expensePayload.note = note;
+
+  batch.set(expenseRef, expensePayload);
 
   Object.entries(splitMap).forEach(([uid, owedCents]) => {
     const isPayer = uid === input.payerUid;

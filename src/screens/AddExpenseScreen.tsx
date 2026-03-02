@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, Alert } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
 import Card from "../components/Card";
 import Row from "../components/Row";
@@ -12,6 +13,8 @@ import { listMembers } from "../api/trips";
 
 type SplitMode = "equal" | "custom" | "percent";
 type Member = { id: string; name: string };
+const MAX_AMOUNT = 9999.99;
+const MAX_AMOUNT_CENTS = 999999;
 
 function sanitizeAmountInput(input: string) {
   const cleaned = input.replace(/[^\d.]/g, "");
@@ -20,11 +23,23 @@ function sanitizeAmountInput(input: string) {
   const [leftRaw = "", ...rest] = cleaned.split(".");
   const rightRaw = rest.join("");
   const left = leftRaw.slice(0, 7);
-  if (!hasDot) return left;
+  if (!hasDot) {
+    const whole = left.length === 0 ? "0" : left;
+    const value = Number(whole);
+    if (Number.isFinite(value) && value > MAX_AMOUNT) return MAX_AMOUNT.toFixed(2);
+    return whole;
+  }
   const normalizedLeft = left.length === 0 ? "0" : left;
   const right = rightRaw.slice(0, 2);
-  if (cleaned.endsWith(".") && right.length === 0) return `${normalizedLeft}.`;
-  return `${normalizedLeft}.${right}`;
+  if (cleaned.endsWith(".") && right.length === 0) {
+    const value = Number(normalizedLeft);
+    if (Number.isFinite(value) && value > MAX_AMOUNT) return MAX_AMOUNT.toFixed(2);
+    return `${normalizedLeft}.`;
+  }
+  const result = `${normalizedLeft}.${right}`;
+  const value = Number(result);
+  if (Number.isFinite(value) && value > MAX_AMOUNT) return MAX_AMOUNT.toFixed(2);
+  return result;
 }
 
 function toNumber(s: string) {
@@ -33,6 +48,7 @@ function toNumber(s: string) {
 }
 
 export default function AddExpenseScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
   const { selectedTripId, currentUser } = useTrip();
   const [members, setMembers] = useState<Member[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
@@ -94,6 +110,10 @@ export default function AddExpenseScreen({ navigation }: any) {
       Alert.alert("Missing fields", "Please complete title, amount, payer and participants.");
       return;
     }
+    if (amountCents > MAX_AMOUNT_CENTS) {
+      Alert.alert("Amount too high", "The maximum allowed amount is $9,999.99.");
+      return;
+    }
 
     const customSplits: Record<string, number> = {};
     if (splitMode === "custom") {
@@ -138,7 +158,7 @@ export default function AddExpenseScreen({ navigation }: any) {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.colors.bg }}>
-      <View style={{ padding: 20, paddingBottom: 40, gap: 14 }}>
+      <View style={{ padding: 20, paddingTop: insets.top + 12, paddingBottom: 40, gap: 14 }}>
         <Text style={{ fontSize: 20, fontWeight: "900", color: theme.colors.text }}>Add Expense</Text>
         {loadingMembers ? <Text style={{ color: theme.colors.muted }}>Loading members...</Text> : null}
 
