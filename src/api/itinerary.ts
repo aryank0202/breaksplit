@@ -97,7 +97,7 @@ export async function deleteItineraryItem(tripId: string, dayId: string, itemId:
 
 export async function listRecentItineraryItems(tripId: string, startDate: string, endDate: string, topN = 8) {
   const dayIds = dateRange(startDate, endDate);
-  const rows: Array<{ id: string; dayId: string; createdAtMs: number; title: string }> = [];
+  const rows: Array<{ id: string; dayId: string; createdAtMs: number; title: string; createdBy: string }> = [];
 
   for (const dayId of dayIds) {
     const items = await listItineraryItems(tripId, dayId);
@@ -107,6 +107,7 @@ export async function listRecentItineraryItems(tripId: string, startDate: string
         dayId,
         createdAtMs: item.createdAt?.toMillis?.() ?? 0,
         title: item.title,
+        createdBy: item.createdBy,
       });
     });
   }

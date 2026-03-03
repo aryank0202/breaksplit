@@ -4,7 +4,6 @@ import { Feather } from "@expo/vector-icons";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Card from "../components/Card";
-import Avatar from "../components/Avatar";
 import ExpensesScreen from "./ExpensesScreen";
 import MembersScreen from "./MembersScreen";
 import { theme } from "../theme";
@@ -12,8 +11,20 @@ import { useTrip } from "../state/TripStore";
 import { computeTotals, listExpenses } from "../api/expenses";
 import { formatCents } from "../utils/money";
 import { listRecentItineraryItems } from "../api/itinerary";
+import { listMembers } from "../api/trips";
 
 const Tab = createMaterialTopTabNavigator();
+
+type ActivityItem = {
+  id: string;
+  actorName: string;
+  actorInitial: string;
+  actorBg: string;
+  actorFg: string;
+  actionText: string;
+  timeText: string;
+  amountText?: string;
+};
 
 function timeAgo(ms: number) {
   const diff = Date.now() - ms;
@@ -26,40 +37,80 @@ function timeAgo(ms: number) {
   return `${Math.floor(diff / day)}d ago`;
 }
 
+function initialsFromName(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return parts[0][0]?.toUpperCase() ?? "?";
+}
+
+function avatarStyleForUid(uid: string) {
+  const palette = [
+    { bg: "#EDE9FE", fg: "#7C3AED" },
+    { bg: "#DBEAFE", fg: "#2563EB" },
+    { bg: "#FCE7F3", fg: "#DB2777" },
+    { bg: "#DCFCE7", fg: "#16A34A" },
+    { bg: "#FFE4E6", fg: "#E11D48" },
+  ];
+  let hash = 0;
+  for (let i = 0; i < uid.length; i += 1) hash += uid.charCodeAt(i);
+  return palette[Math.abs(hash) % palette.length];
+}
+
 function ItineraryTabContent({ navigation }: any) {
   const { selectedTripId, selectedTrip, currentUser } = useTrip();
   const [youOwe, setYouOwe] = useState("$0.00");
   const [youreOwed, setYoureOwed] = useState("$0.00");
-  const [activity, setActivity] = useState<Array<{ id: string; initials: string; color: string; title: string; subtitle: string; amount?: string }>>([]);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
 
   useEffect(() => {
     async function load() {
       if (!selectedTripId || !selectedTrip || !currentUser) return;
-      const [totals, expenses, itinerary] = await Promise.all([
+      const [members, totals, expenses, itinerary] = await Promise.all([
+        listMembers(selectedTripId),
         computeTotals(selectedTripId, currentUser.uid),
         listExpenses(selectedTripId),
         listRecentItineraryItems(selectedTripId, selectedTrip.startDate, selectedTrip.endDate, 8),
       ]);
+      const memberNameByUid = new Map(
+        members.map((member) => [member.uid, member.uid === currentUser.uid ? "You" : member.displayName])
+      );
+
       setYouOwe(formatCents(totals.youOweCents));
       setYoureOwed(formatCents(totals.youreOwedCents));
 
-      const expenseRows = expenses.slice(0, 5).map((expense) => ({
-        id: `expense_${expense.id}`,
-        initials: "EX",
-        color: "#3B82F6",
-        title: `Expense: ${expense.title}`,
-        subtitle: timeAgo(expense.createdAtMs),
-        amount: formatCents(expense.amountCents),
-        createdAtMs: expense.createdAtMs,
-      }));
-      const itineraryRows = itinerary.map((item) => ({
-        id: `itinerary_${item.id}`,
-        initials: "IT",
-        color: "#14B8A6",
-        title: `Itinerary: ${item.title}`,
-        subtitle: `${item.dayId} • ${timeAgo(item.createdAtMs)}`,
-        createdAtMs: item.createdAtMs,
-      }));
+      const expenseRows = expenses.slice(0, 5).map((expense) => {
+        const actorUid = expense.payerUid;
+        const actorName = memberNameByUid.get(actorUid) ?? "Someone";
+        const avatarStyle = avatarStyleForUid(actorUid);
+        return {
+          id: `expense_${expense.id}`,
+          actorName,
+          actorInitial: initialsFromName(actorName),
+          actorBg: avatarStyle.bg,
+          actorFg: avatarStyle.fg,
+          actionText: `paid for ${expense.title}`,
+          timeText: timeAgo(expense.createdAtMs),
+          amountText: formatCents(expense.amountCents),
+          createdAtMs: expense.createdAtMs,
+        };
+      });
+
+      const itineraryRows = itinerary.map((item) => {
+        const actorUid = item.createdBy;
+        const actorName = memberNameByUid.get(actorUid) ?? "Someone";
+        const avatarStyle = avatarStyleForUid(actorUid);
+        return {
+          id: `itinerary_${item.id}`,
+          actorName,
+          actorInitial: initialsFromName(actorName),
+          actorBg: avatarStyle.bg,
+          actorFg: avatarStyle.fg,
+          actionText: `added ${item.title}`,
+          timeText: timeAgo(item.createdAtMs),
+          createdAtMs: item.createdAtMs,
+        };
+      });
+
       setActivity(
         [...expenseRows, ...itineraryRows]
           .sort((a, b) => b.createdAtMs - a.createdAtMs)
@@ -94,23 +145,28 @@ function ItineraryTabContent({ navigation }: any) {
               <Text style={styles.secondaryButtonText}>Add Itinerary Item</Text>
             </Pressable>
 
-            <Text style={{ fontSize: 20, fontWeight: "800", marginTop: 8, color: "#111827" }}>Recent Activity</Text>
+            <Text style={styles.recentHeading}>Recent Activity</Text>
           </View>
         }
         data={activity}
         keyExtractor={(item) => item.id}
         ListEmptyComponent={<Text style={{ marginHorizontal: 20, marginTop: 8, color: theme.colors.muted }}>No activity yet.</Text>}
         renderItem={({ item }) => (
-          <Card style={{ marginTop: 12, marginHorizontal: 20 }}>
+          <View style={styles.activityCard}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <Avatar initials={item.initials} bgColor={item.color} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontWeight: "700", color: theme.colors.text }}>{item.title}</Text>
-                <Text style={{ color: theme.colors.muted, marginTop: 2 }}>{item.subtitle}</Text>
+              <View style={[styles.activityAvatar, { backgroundColor: item.actorBg }]}>
+                <Text style={[styles.activityAvatarText, { color: item.actorFg }]}>{item.actorInitial}</Text>
               </View>
-              {item.amount ? <Text style={{ fontWeight: "800", color: theme.colors.text }}>{item.amount}</Text> : null}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.activityTitle} numberOfLines={1}>
+                  <Text style={styles.activityName}>{item.actorName} </Text>
+                  <Text>{item.actionText}</Text>
+                </Text>
+                <Text style={styles.activityTime}>{item.timeText}</Text>
+              </View>
+              {item.amountText ? <Text style={styles.activityAmount}>{item.amountText}</Text> : null}
             </View>
-          </Card>
+          </View>
         )}
       />
     </View>
@@ -204,4 +260,50 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   secondaryButtonText: { fontWeight: "700", fontSize: 16, color: theme.colors.primary },
+  recentHeading: { fontSize: 34, fontWeight: "800", marginTop: 8, color: "#111827" },
+  activityCard: {
+    marginTop: 12,
+    marginHorizontal: 20,
+    backgroundColor: "white",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  activityAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  activityAvatarText: {
+    fontWeight: "700",
+    fontSize: 17,
+  },
+  activityTitle: {
+    color: "#111827",
+    fontSize: 15,
+  },
+  activityName: {
+    fontWeight: "800",
+  },
+  activityTime: {
+    marginTop: 4,
+    color: "#64748B",
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  activityAmount: {
+    color: "#111827",
+    fontSize: 15,
+    fontWeight: "700",
+    marginLeft: 8,
+  },
 });
