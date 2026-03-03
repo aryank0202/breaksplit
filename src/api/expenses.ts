@@ -113,6 +113,25 @@ export async function confirmSplitPaid(tripId: string, expenseId: string, uid: s
   });
 }
 
+export async function deleteExpense(tripId: string, expenseId: string) {
+  const uid = requireUid();
+  const expenseRef = doc(db, "trips", tripId, "expenses", expenseId);
+  const expenseSnap = await getDoc(expenseRef);
+  if (!expenseSnap.exists()) {
+    throw new Error("Expense not found.");
+  }
+  const expense = expenseSnap.data() as ExpenseDoc;
+  if (expense.createdBy !== uid) {
+    throw new Error("Only the expense creator can delete this expense.");
+  }
+
+  const splitSnap = await getDocs(collection(db, "trips", tripId, "expenses", expenseId, "splits"));
+  const batch = writeBatch(db);
+  splitSnap.forEach((snap) => batch.delete(snap.ref));
+  batch.delete(expenseRef);
+  await batch.commit();
+}
+
 async function listSplitsForExpense(tripId: string, expenseId: string) {
   const splitSnap = await getDocs(collection(db, "trips", tripId, "expenses", expenseId, "splits"));
   return splitSnap.docs.map((snap) => ({ uid: snap.id, ...(snap.data() as SplitDoc) }));

@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, FlatList, Pressable, Alert } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import { Feather } from "@expo/vector-icons";
 import { theme } from "../theme";
 import Card from "../components/Card";
 import Pill from "../components/Pill";
 import Row from "../components/Row";
 import { useTrip } from "../state/TripStore";
-import { computeTotals, listExpenses, type ListedExpense } from "../api/expenses";
+import { computeTotals, deleteExpense, listExpenses, type ListedExpense } from "../api/expenses";
 import { formatCents } from "../utils/money";
 import { listMembers } from "../api/trips";
 
@@ -35,32 +37,64 @@ export default function ExpensesScreen({ navigation }: any) {
   const [youreOwed, setYoureOwed] = useState("$0.00");
   const [memberNames, setMemberNames] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    async function load() {
-      if (!selectedTripId || !currentUser) return;
-      try {
-        setLoading(true);
-        const [expenseRows, totals, members] = await Promise.all([
-          listExpenses(selectedTripId),
-          computeTotals(selectedTripId, currentUser.uid),
-          listMembers(selectedTripId),
-        ]);
-        const nameMap: Record<string, string> = {};
-        members.forEach((member) => {
-          nameMap[member.uid] = member.uid === currentUser.uid ? "You" : member.displayName;
-        });
-        setMemberNames(nameMap);
-        setExpenses(expenseRows);
-        setYouOwe(formatCents(totals.youOweCents));
-        setYoureOwed(formatCents(totals.youreOwedCents));
-      } catch (error: any) {
-        Alert.alert("Error", error?.message ?? "Could not load expenses.");
-      } finally {
-        setLoading(false);
-      }
+  async function loadExpenses() {
+    if (!selectedTripId || !currentUser) return;
+    try {
+      setLoading(true);
+      const [expenseRows, totals, members] = await Promise.all([
+        listExpenses(selectedTripId),
+        computeTotals(selectedTripId, currentUser.uid),
+        listMembers(selectedTripId),
+      ]);
+      const nameMap: Record<string, string> = {};
+      members.forEach((member) => {
+        nameMap[member.uid] = member.uid === currentUser.uid ? "You" : member.displayName;
+      });
+      setMemberNames(nameMap);
+      setExpenses(expenseRows);
+      setYouOwe(formatCents(totals.youOweCents));
+      setYoureOwed(formatCents(totals.youreOwedCents));
+    } catch (error: any) {
+      Alert.alert("Error", error?.message ?? "Could not load expenses.");
+    } finally {
+      setLoading(false);
     }
-    void load();
+  }
+
+  useEffect(() => {
+    void loadExpenses();
   }, [currentUser, selectedTripId]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void loadExpenses();
+    }, [currentUser?.uid, selectedTripId])
+  );
+
+  function onDeleteExpense(item: ListedExpense) {
+    if (!selectedTripId || !currentUser) return;
+    if (item.createdBy !== currentUser.uid) {
+      Alert.alert("Not allowed", "Only the user who created this expense can delete it.");
+      return;
+    }
+
+    Alert.alert("Delete expense", `Delete "${item.title}"? This cannot be undone.`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteExpense(selectedTripId, item.id);
+            setExpenses((prev) => prev.filter((row) => row.id !== item.id));
+            void loadExpenses();
+          } catch (error: any) {
+            Alert.alert("Delete failed", error?.message ?? "Could not delete expense.");
+          }
+        },
+      },
+    ]);
+  }
 
   const emptyText = useMemo(() => (loading ? "Loading..." : "No expenses yet."), [loading]);
 
@@ -102,9 +136,23 @@ export default function ExpensesScreen({ navigation }: any) {
               })}
             >
               <Card>
-                <Text style={{ color: theme.colors.text, fontWeight: "900", fontSize: 16 }}>{item.title}</Text>
+                <Row style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <Text style={{ color: theme.colors.text, fontWeight: "900", fontSize: 16, flex: 1 }}>{item.title}</Text>
+                  {item.createdBy === currentUser?.uid ? (
+                    <Pressable
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        onDeleteExpense(item);
+                      }}
+                      hitSlop={10}
+                      style={{ marginLeft: 10, padding: 6, borderRadius: 8 }}
+                    >
+                      <Feather name="trash-2" size={16} color={theme.colors.danger} />
+                    </Pressable>
+                  ) : null}
+                </Row>
                 <Text style={{ color: theme.colors.muted, marginTop: 4, fontWeight: "600" }}>
-                  Paid by {paidBy} • {new Date(item.createdAtMs || Date.now()).toLocaleDateString()}
+                  Paid by {paidBy} - {new Date(item.createdAtMs || Date.now()).toLocaleDateString()}
                 </Text>
                 <Row style={{ justifyContent: "space-between", marginTop: 12 }}>
                   <Text style={{ color: theme.colors.text, fontWeight: "900" }}>Total: {total}</Text>
