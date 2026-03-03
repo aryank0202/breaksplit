@@ -49,7 +49,7 @@ function toNumber(s: string) {
 
 export default function AddExpenseScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { selectedTripId, currentUser } = useTrip();
+  const { selectedTripId, currentUser, bumpTripDataVersion } = useTrip();
   const [members, setMembers] = useState<Member[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -148,6 +148,7 @@ export default function AddExpenseScreen({ navigation }: any) {
         note: "",
         customSplits: splitMode === "equal" ? undefined : customSplits,
       });
+      bumpTripDataVersion();
       navigation.goBack();
     } catch (error: any) {
       Alert.alert("Create failed", error?.message ?? "Could not create expense.");

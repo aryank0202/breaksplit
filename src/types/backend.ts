@@ -80,5 +80,6 @@ export type TripMember = {
   joinedAt: Timestamp | null;
   displayName: string;
   email: string;
+  photoURL?: string;
   venmoHandle?: string;
 };

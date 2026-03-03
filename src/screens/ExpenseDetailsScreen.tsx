@@ -38,7 +38,7 @@ function colorForUid(uid: string) {
 
 export default function ExpenseDetailsScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
-  const { selectedTripId, currentUser } = useTrip();
+  const { selectedTripId, currentUser, bumpTripDataVersion } = useTrip();
   const expenseId = route?.params?.expenseId as string;
   const [loading, setLoading] = useState(true);
   const [expense, setExpense] = useState<any | null>(null);
@@ -111,6 +111,7 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
     if (!selectedTripId || !currentUser) return;
     try {
       await markMySplitPaid(selectedTripId, expenseId, currentUser.uid);
+      bumpTripDataVersion();
       await reload();
     } catch (error: any) {
       Alert.alert("Update failed", error?.message ?? "Could not mark as paid.");
@@ -121,6 +122,7 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
     if (!selectedTripId) return;
     try {
       await confirmSplitPaid(selectedTripId, expenseId, uid);
+      bumpTripDataVersion();
       await reload();
     } catch (error: any) {
       Alert.alert("Confirm failed", error?.message ?? "Could not confirm payment.");

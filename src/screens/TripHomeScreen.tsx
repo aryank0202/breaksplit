@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import { theme } from "../theme";
 import { useTrip } from "../state/TripStore";
 import { computeTotals } from "../api/expenses";
-import { listMembers, listMyTrips, deleteTrip} from "../api/trips";
+import { listMembers, listMyTrips, deleteTrip } from "../api/trips";
 import { formatCents } from "../utils/money";
 
 function formatDateRange(startDate: string, endDate: string) {
@@ -25,7 +26,7 @@ function toneFromAmount(value: number) {
 
 export default function TripHomeScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { setSelectedTripId, selectedTrip, setSelectedTrip, currentUser } = useTrip();
+  const { setSelectedTripId, selectedTrip, setSelectedTrip, currentUser, tripDataVersion } = useTrip();
   const [loading, setLoading] = useState(true);
   const [tripCards, setTripCards] = useState<
     Array<{
@@ -40,50 +41,52 @@ export default function TripHomeScreen({ navigation }: any) {
     }>
   >([]);
 
-  useEffect(() => {
+  async function loadTripCards() {
     if (!currentUser?.uid) {
       setTripCards([]);
       setLoading(false);
       return;
     }
     const uid = currentUser.uid;
-
-    async function load() {
-      try {
-        setLoading(true);
-        const trips = await listMyTrips(uid);
-        const cards = await Promise.all(
-          trips.map(async (trip) => {
-            try {
-              const [members, totals] = await Promise.all([
-                listMembers(trip.id),
-                computeTotals(trip.id, uid),
-              ]);
-              return {
-                id: trip.id,
-                name: trip.name,
-                startDate: trip.startDate,
-                endDate: trip.endDate,
-                timezone: trip.timezone,
-                memberCount: members.length,
-                youOweCents: totals.youOweCents,
-                youreOwedCents: totals.youreOwedCents,
-              };
-            } catch {
-              return null;
-            }
-          })
-        );
-        setTripCards(cards.filter((card): card is Exclude<(typeof cards)[number], null> => Boolean(card)));
-      } catch (error: any) {
-        Alert.alert("Load failed", error?.message ?? "Could not load trip.");
-      } finally {
-        setLoading(false);
-      }
+    try {
+      setLoading(true);
+      const trips = await listMyTrips(uid);
+      const cards = await Promise.all(
+        trips.map(async (trip) => {
+          try {
+            const [members, totals] = await Promise.all([listMembers(trip.id), computeTotals(trip.id, uid)]);
+            return {
+              id: trip.id,
+              name: trip.name,
+              startDate: trip.startDate,
+              endDate: trip.endDate,
+              timezone: trip.timezone,
+              memberCount: members.length,
+              youOweCents: totals.youOweCents,
+              youreOwedCents: totals.youreOwedCents,
+            };
+          } catch {
+            return null;
+          }
+        })
+      );
+      setTripCards(cards.filter((card): card is Exclude<(typeof cards)[number], null> => Boolean(card)));
+    } catch (error: any) {
+      Alert.alert("Load failed", error?.message ?? "Could not load trip.");
+    } finally {
+      setLoading(false);
     }
-    void load();
-  }, [currentUser?.uid]);
+  }
 
+  useEffect(() => {
+    void loadTripCards();
+  }, [currentUser?.uid, tripDataVersion]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void loadTripCards();
+    }, [currentUser?.uid])
+  );
 
   const selectedDateText = useMemo(() => {
     if (!selectedTrip) return "";
@@ -131,7 +134,11 @@ export default function TripHomeScreen({ navigation }: any) {
           <Text style={styles.headerTitle}>My Trips</Text>
         </View>
         <Pressable onPress={() => navigation.navigate("Profile")} style={styles.profileIcon}>
-          <Feather name="user" size={18} color={theme.colors.muted} />
+          {currentUser?.photoURL ? (
+            <Image source={{ uri: currentUser.photoURL }} style={styles.profileImage} />
+          ) : (
+            <Feather name="user" size={18} color={theme.colors.muted} />
+          )}
         </Pressable>
       </View>
 
@@ -220,6 +227,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5E7EB",
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+  },
+  profileImage: {
+    width: "100%",
+    height: "100%",
   },
   content: {
     padding: 20,

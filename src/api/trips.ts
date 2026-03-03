@@ -207,6 +207,7 @@ export async function listMembers(tripId: string): Promise<TripMember[]> {
       joinedAt: member.joinedAt,
       displayName: user?.displayName ?? fallbackName,
       email: user?.email ?? "",
+      photoURL: user?.photoURL,
       venmoHandle: user?.venmoHandle,
     };
   });

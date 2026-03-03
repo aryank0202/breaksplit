@@ -7,9 +7,11 @@ type TripContextValue = {
   currentUser: CurrentUserState | null;
   selectedTripId: string | null;
   selectedTrip: SelectedTripState | null;
+  tripDataVersion: number;
   setCurrentUser: (user: CurrentUserState | null) => void;
   setSelectedTripId: (tripId: string | null) => void;
   setSelectedTrip: (trip: SelectedTripState | null) => void;
+  bumpTripDataVersion: () => void;
   resetStore: () => void;
 };
 
@@ -19,6 +21,11 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<CurrentUserState | null>(null);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [selectedTrip, setSelectedTrip] = useState<SelectedTripState | null>(null);
+  const [tripDataVersion, setTripDataVersion] = useState(0);
+
+  const bumpTripDataVersion = useCallback(() => {
+    setTripDataVersion((prev) => prev + 1);
+  }, []);
 
   const resetStore = useCallback(() => {
     setCurrentUser(null);
@@ -37,12 +44,14 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       currentUser,
       selectedTripId,
       selectedTrip,
+      tripDataVersion,
       setCurrentUser,
       setSelectedTripId,
       setSelectedTrip,
+      bumpTripDataVersion,
       resetStore,
     }),
-    [currentUser, selectedTripId, selectedTrip]
+    [bumpTripDataVersion, currentUser, selectedTripId, selectedTrip, tripDataVersion]
   );
 
   return <TripContext.Provider value={value}>{children}</TripContext.Provider>;

@@ -16,6 +16,7 @@ type MemberView = {
   initials: string;
   color: string;
   role: "admin" | "member";
+  photoURL?: string;
 };
 
 function initialsFromName(name: string) {
@@ -52,6 +53,7 @@ export default function MembersScreen() {
               initials: initialsFromName(name),
               color: colorForUid(member.uid),
               role: member.role,
+              photoURL: member.uid === currentUser.uid ? currentUser.photoURL : member.photoURL,
             };
           })
         );
@@ -109,7 +111,7 @@ export default function MembersScreen() {
           >
             <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
               <Row style={{ gap: 12 }}>
-                <Avatar initials={item.initials} bgColor={item.color} />
+                <Avatar initials={item.initials} bgColor={item.color} photoURL={item.photoURL} />
                 <View style={{ flex: 1 }}>
                   <Row style={{ gap: 8, flexWrap: "wrap" as any }}>
                     <Text style={{ fontWeight: "900", color: theme.colors.text }}>{item.name}</Text>

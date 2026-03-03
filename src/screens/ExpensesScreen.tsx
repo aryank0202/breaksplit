@@ -30,7 +30,7 @@ function SummaryMini({ label, value, valueColor }: { label: string; value: strin
 }
 
 export default function ExpensesScreen({ navigation }: any) {
-  const { selectedTripId, currentUser } = useTrip();
+  const { selectedTripId, currentUser, bumpTripDataVersion } = useTrip();
   const [expenses, setExpenses] = useState<ListedExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [youOwe, setYouOwe] = useState("$0.00");
@@ -87,6 +87,7 @@ export default function ExpensesScreen({ navigation }: any) {
           try {
             await deleteExpense(selectedTripId, item.id);
             setExpenses((prev) => prev.filter((row) => row.id !== item.id));
+            bumpTripDataVersion();
             void loadExpenses();
           } catch (error: any) {
             Alert.alert("Delete failed", error?.message ?? "Could not delete expense.");

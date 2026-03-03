@@ -1,13 +1,14 @@
 import React from "react";
-import { View, Text } from "react-native";
-import { theme } from "../theme";
+import { View, Text, Image } from "react-native";
 
 export default function Avatar({
   initials,
   bgColor,
+  photoURL,
 }: {
   initials: string;
   bgColor: string;
+  photoURL?: string;
 }) {
   return (
     <View
@@ -20,7 +21,14 @@ export default function Avatar({
         justifyContent: "center",
       }}
     >
-      <Text style={{ color: "white", fontWeight: "700" }}>{initials}</Text>
+      {photoURL ? (
+        <Image
+          source={{ uri: photoURL }}
+          style={{ width: 42, height: 42, borderRadius: 999 }}
+        />
+      ) : (
+        <Text style={{ color: "white", fontWeight: "700" }}>{initials}</Text>
+      )}
     </View>
   );
 }
