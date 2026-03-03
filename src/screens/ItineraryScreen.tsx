@@ -149,7 +149,7 @@ function ItineraryTabContent({ navigation }: any) {
               <Text style={styles.secondaryButtonText}>Add Itinerary Item</Text>
             </Pressable>
 
-            <Text style={styles.recentHeading}>Recent Activity</Text>
+            <Text style={styles.recentHeading}>Activity</Text>
           </View>
         }
         data={activity}
