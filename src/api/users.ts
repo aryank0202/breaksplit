@@ -10,7 +10,6 @@ import {
   serverTimestamp,
   setDoc,
   where,
-  writeBatch,
 } from "firebase/firestore";
 import * as FileSystem from "expo-file-system/legacy";
 import { app, auth, db, storageBucketCandidates } from "../firebase";
@@ -42,21 +41,38 @@ export async function upsertUserProfile(uid: string, payload: UpsertPayload) {
   await setDoc(ref, nextData, { merge: true });
 
   // Keep trip membership snapshots in sync so names/photos are readable without user-doc access.
-  const memberships = await getDocs(query(collectionGroup(db, "members"), where("uid", "==", uid)));
-  if (!memberships.empty) {
-    const batch = writeBatch(db);
-    memberships.forEach((membershipDoc) => {
-      batch.set(
-        membershipDoc.ref,
-        {
-          displayName: nextData.displayName,
-          email: nextData.email,
-          photoURL: payload.photoURL ?? null,
-        },
-        { merge: true }
+  try {
+    const memberships = await getDocs(query(collectionGroup(db, "members"), where("uid", "==", uid)));
+    if (!memberships.empty) {
+      const updates = memberships.docs.map(async (membershipDoc) => {
+        await setDoc(
+          membershipDoc.ref,
+          {
+            displayName: nextData.displayName,
+            email: nextData.email,
+            photoURL: payload.photoURL ?? null,
+          },
+          { merge: true }
+        );
+      });
+      const settled = await Promise.allSettled(updates);
+      const nonPermissionFailures = settled.filter(
+        (result) =>
+          result.status === "rejected" &&
+          !String((result.reason as any)?.code ?? "").includes("permission-denied")
       );
-    });
-    await batch.commit();
+      if (nonPermissionFailures.length > 0) {
+        throw (nonPermissionFailures[0] as PromiseRejectedResult).reason;
+      }
+    }
+  } catch (error: any) {
+    const code = String(error?.code ?? "");
+    if (!code.includes("permission-denied")) {
+      throw error;
+    }
+    // Membership mirror writes can be blocked by security rules in some projects.
+    // The primary user profile write above has already succeeded.
+    console.warn("Skipping member snapshot sync due to Firestore rules:", error?.message ?? error);
   }
 }
 

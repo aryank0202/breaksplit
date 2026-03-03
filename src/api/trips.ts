@@ -281,10 +281,11 @@ export async function listMembers(tripId: string): Promise<TripMember[]> {
       uid: member.uid,
       role: member.role,
       joinedAt: member.joinedAt,
-      displayName: member.displayName ?? user?.displayName ?? authName ?? fallbackName,
-      email: member.email ?? user?.email ?? authEmail ?? "",
-      photoURL: member.photoURL ?? user?.photoURL ?? authPhotoURL,
-      venmoHandle: member.venmoHandle ?? user?.venmoHandle,
+      // Prefer the canonical user profile when available; member docs are denormalized snapshots.
+      displayName: user?.displayName ?? member.displayName ?? authName ?? fallbackName,
+      email: user?.email ?? member.email ?? authEmail ?? "",
+      photoURL: user?.photoURL ?? member.photoURL ?? authPhotoURL,
+      venmoHandle: user?.venmoHandle ?? member.venmoHandle,
     };
   });
 }

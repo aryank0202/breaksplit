@@ -32,7 +32,7 @@ function isValidEmail(email: string) {
 
 export default function EditProfileScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { currentUser, setCurrentUser, resetStore } = useTrip();
+  const { currentUser, setCurrentUser, bumpTripDataVersion, resetStore } = useTrip();
   const [displayName, setDisplayName] = useState(currentUser?.displayName ?? "");
   const [email, setEmail] = useState(currentUser?.email ?? "");
   const [photoURL, setPhotoURL] = useState(currentUser?.photoURL ?? "");
@@ -109,6 +109,7 @@ export default function EditProfileScreen({ navigation }: any) {
         email: nextEmail,
         photoURL: nextPhotoURL || undefined,
       });
+      bumpTripDataVersion();
 
       Alert.alert("Saved", "Profile updated successfully.");
       navigation.goBack();
