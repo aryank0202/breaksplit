@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import { Feather } from "@expo/vector-icons";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { FlatList, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Card from "../components/Card";
 import ExpensesScreen from "./ExpensesScreen";
@@ -21,6 +21,7 @@ type ActivityItem = {
   actorInitial: string;
   actorBg: string;
   actorFg: string;
+  actorPhotoURL?: string;
   actionText: string;
   timeText: string;
   amountText?: string;
@@ -72,8 +73,9 @@ function ItineraryTabContent({ navigation }: any) {
         listRecentItineraryItems(selectedTripId, selectedTrip.startDate, selectedTrip.endDate, 8),
       ]);
       const memberNameByUid = new Map(
-        members.map((member) => [member.uid, member.uid === currentUser.uid ? "You" : member.displayName])
+        members.map((member) => [member.uid, member.displayName])
       );
+      const memberPhotoByUid = new Map(members.map((member) => [member.uid, member.photoURL]));
 
       setYouOwe(formatCents(totals.youOweCents));
       setYoureOwed(formatCents(totals.youreOwedCents));
@@ -88,6 +90,7 @@ function ItineraryTabContent({ navigation }: any) {
           actorInitial: initialsFromName(actorName),
           actorBg: avatarStyle.bg,
           actorFg: avatarStyle.fg,
+          actorPhotoURL: memberPhotoByUid.get(actorUid),
           actionText: `paid for ${expense.title}`,
           timeText: timeAgo(expense.createdAtMs),
           amountText: formatCents(expense.amountCents),
@@ -105,6 +108,7 @@ function ItineraryTabContent({ navigation }: any) {
           actorInitial: initialsFromName(actorName),
           actorBg: avatarStyle.bg,
           actorFg: avatarStyle.fg,
+          actorPhotoURL: memberPhotoByUid.get(actorUid),
           actionText: `added ${item.title}`,
           timeText: timeAgo(item.createdAtMs),
           createdAtMs: item.createdAtMs,
@@ -155,7 +159,11 @@ function ItineraryTabContent({ navigation }: any) {
           <View style={styles.activityCard}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
               <View style={[styles.activityAvatar, { backgroundColor: item.actorBg }]}>
-                <Text style={[styles.activityAvatarText, { color: item.actorFg }]}>{item.actorInitial}</Text>
+                {item.actorPhotoURL ? (
+                  <Image source={{ uri: item.actorPhotoURL }} style={styles.activityAvatarImage} />
+                ) : (
+                  <Text style={[styles.activityAvatarText, { color: item.actorFg }]}>{item.actorInitial}</Text>
+                )}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.activityTitle} numberOfLines={1}>
@@ -282,6 +290,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+  },
+  activityAvatarImage: {
+    width: "100%",
+    height: "100%",
   },
   activityAvatarText: {
     fontWeight: "700",

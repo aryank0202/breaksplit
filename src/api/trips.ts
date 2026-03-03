@@ -49,8 +49,30 @@ function chunk<T>(arr: T[], size: number) {
   return out;
 }
 
+async function getCurrentMemberProfile(uid: string) {
+  const authUser = auth.currentUser;
+  let userDoc: UserDoc | null = null;
+  try {
+    userDoc = await getUser(uid);
+  } catch {
+    userDoc = null;
+  }
+
+  return {
+    displayName:
+      userDoc?.displayName ??
+      authUser?.displayName ??
+      authUser?.email?.split("@")[0] ??
+      "Member",
+    email: userDoc?.email ?? authUser?.email ?? "",
+    photoURL: userDoc?.photoURL ?? authUser?.photoURL ?? null,
+    venmoHandle: userDoc?.venmoHandle ?? null,
+  };
+}
+
 export async function createTrip({ name, startDate, endDate, timezone }: CreateTripInput) {
   const uid = requireUid();
+  const profile = await getCurrentMemberProfile(uid);
   const tripRef = doc(collection(db, "trips"));
   const inviteCode = makeInviteCode();
   const batch = writeBatch(db);
@@ -70,6 +92,10 @@ export async function createTrip({ name, startDate, endDate, timezone }: CreateT
     uid,
     role: "admin",
     joinedAt: serverTimestamp(),
+    displayName: profile.displayName,
+    email: profile.email,
+    photoURL: profile.photoURL,
+    venmoHandle: profile.venmoHandle,
   } as Record<string, unknown>);
 
   await batch.commit();
@@ -82,6 +108,7 @@ export async function deleteTrip(tripId: string) {
 
 export async function joinTripByInviteCode(code: string) {
   const uid = requireUid();
+  const profile = await getCurrentMemberProfile(uid);
   const normalized = code.replace(/\s+/g, "").trim().toUpperCase();
   const q = query(collection(db, "trips"), where("inviteCode", "==", normalized), limit(1));
   const snap = await getDocs(q);
@@ -96,6 +123,10 @@ export async function joinTripByInviteCode(code: string) {
       uid,
       role: "member",
       joinedAt: serverTimestamp(),
+      displayName: profile.displayName,
+      email: profile.email,
+      photoURL: profile.photoURL,
+      venmoHandle: profile.venmoHandle,
     } as Record<string, unknown>,
     { merge: true }
   );
@@ -182,6 +213,7 @@ export async function listMembers(tripId: string): Promise<TripMember[]> {
   if (membershipSnaps.empty) return [];
 
   const memberDocs = membershipSnaps.docs.map((snap) => ({
+    ref: snap.ref,
     uid: snap.id,
     ...(snap.data() as TripMemberDoc),
   }));
@@ -197,18 +229,62 @@ export async function listMembers(tripId: string): Promise<TripMember[]> {
       // Keep members usable with fallback labels instead of failing the whole request.
     }
   }
+  const myUid = auth.currentUser?.uid;
+  if (myUid && !userDocMap.has(myUid)) {
+    try {
+      const me = await getUser(myUid);
+      if (me) userDocMap.set(myUid, me);
+    } catch {
+      // Ignore own-doc fallback failures.
+    }
+  }
+
+  const profileBackfillBatch = writeBatch(db);
+  let backfillCount = 0;
+  memberDocs.forEach((member) => {
+    const user = userDocMap.get(member.uid);
+    if (!user) return;
+    const needsBackfill =
+      !member.displayName ||
+      !member.email ||
+      member.photoURL === undefined ||
+      (member.venmoHandle === undefined && user.venmoHandle !== undefined);
+    if (!needsBackfill) return;
+    profileBackfillBatch.set(
+      member.ref,
+      {
+        displayName: user.displayName,
+        email: user.email,
+        photoURL: user.photoURL ?? null,
+        venmoHandle: user.venmoHandle ?? null,
+      },
+      { merge: true }
+    );
+    backfillCount += 1;
+  });
+  if (backfillCount > 0) {
+    try {
+      await profileBackfillBatch.commit();
+    } catch {
+      // Ignore backfill write failures; listMembers should remain read-first.
+    }
+  }
 
   return memberDocs.map((member) => {
     const user = userDocMap.get(member.uid);
-    const fallbackName = member.uid === auth.currentUser?.uid ? "You" : `Member ${member.uid.slice(0, 6)}`;
+    const isMe = member.uid === auth.currentUser?.uid;
+    const authName = isMe ? auth.currentUser?.displayName ?? undefined : undefined;
+    const authEmail = isMe ? auth.currentUser?.email ?? undefined : undefined;
+    const authPhotoURL = isMe ? auth.currentUser?.photoURL ?? undefined : undefined;
+    const fallbackName = "Member";
     return {
       uid: member.uid,
       role: member.role,
       joinedAt: member.joinedAt,
-      displayName: user?.displayName ?? fallbackName,
-      email: user?.email ?? "",
-      photoURL: user?.photoURL,
-      venmoHandle: user?.venmoHandle,
+      displayName: member.displayName ?? user?.displayName ?? authName ?? fallbackName,
+      email: member.email ?? user?.email ?? authEmail ?? "",
+      photoURL: member.photoURL ?? user?.photoURL ?? authPhotoURL,
+      venmoHandle: member.venmoHandle ?? user?.venmoHandle,
     };
   });
 }

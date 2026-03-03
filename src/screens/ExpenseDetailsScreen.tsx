@@ -64,7 +64,7 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
         const memberById = new Map(members.map((member) => [member.uid, member]));
         const rowData = splits.map((split) => {
           const member = memberById.get(split.uid);
-          const name = split.uid === currentUser.uid ? "You" : member?.displayName ?? "Unknown";
+          const name = member?.displayName ?? "Unknown";
           return {
             memberId: split.uid,
             name,

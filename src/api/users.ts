@@ -1,5 +1,17 @@
 import { getDownloadURL, getStorage, ref, uploadString } from "firebase/storage";
-import { arrayUnion, deleteDoc, doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import {
+  arrayUnion,
+  collectionGroup,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+  writeBatch,
+} from "firebase/firestore";
 import * as FileSystem from "expo-file-system/legacy";
 import { app, auth, db, storageBucketCandidates } from "../firebase";
 import type { UserDoc } from "../types/backend";
@@ -28,6 +40,24 @@ export async function upsertUserProfile(uid: string, payload: UpsertPayload) {
   }
 
   await setDoc(ref, nextData, { merge: true });
+
+  // Keep trip membership snapshots in sync so names/photos are readable without user-doc access.
+  const memberships = await getDocs(query(collectionGroup(db, "members"), where("uid", "==", uid)));
+  if (!memberships.empty) {
+    const batch = writeBatch(db);
+    memberships.forEach((membershipDoc) => {
+      batch.set(
+        membershipDoc.ref,
+        {
+          displayName: nextData.displayName,
+          email: nextData.email,
+          photoURL: payload.photoURL ?? null,
+        },
+        { merge: true }
+      );
+    });
+    await batch.commit();
+  }
 }
 
 export async function getUser(uid: string) {

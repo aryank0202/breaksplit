@@ -22,8 +22,13 @@ export type TripDoc = {
 };
 
 export type TripMemberDoc = {
+  uid?: string;
   role: "admin" | "member";
   joinedAt: Timestamp | null;
+  displayName?: string;
+  email?: string;
+  photoURL?: string;
+  venmoHandle?: string;
 };
 
 export type ItineraryItemDoc = {

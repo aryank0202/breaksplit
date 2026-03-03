@@ -48,7 +48,7 @@ export default function ExpensesScreen({ navigation }: any) {
       ]);
       const nameMap: Record<string, string> = {};
       members.forEach((member) => {
-        nameMap[member.uid] = member.uid === currentUser.uid ? "You" : member.displayName;
+        nameMap[member.uid] = member.displayName;
       });
       setMemberNames(nameMap);
       setExpenses(expenseRows);

@@ -75,7 +75,7 @@ export default function AddExpenseScreen({ navigation }: any) {
         const tripMembers = await listMembers(selectedTripId);
         const memberRows = tripMembers.map((member) => ({
           id: member.uid,
-          name: member.uid === currentUser.uid ? "You" : member.displayName,
+          name: member.displayName,
         }));
         setMembers(memberRows);
         setSelectedIds(memberRows.map((member) => member.id));

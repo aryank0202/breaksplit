@@ -45,7 +45,7 @@ export default function MembersScreen() {
         const [memberRows, trip] = await Promise.all([listMembers(selectedTripId), getTrip(selectedTripId)]);
         setMembers(
           memberRows.map((member) => {
-            const name = member.uid === currentUser.uid ? `You (${member.displayName})` : member.displayName;
+            const name = member.displayName;
             return {
               id: member.uid,
               name,
@@ -117,7 +117,7 @@ export default function MembersScreen() {
                     <Text style={{ fontWeight: "900", color: theme.colors.text }}>{item.name}</Text>
                     {item.role === "admin" ? <Pill label="ADMIN" tone="info" /> : null}
                   </Row>
-                  <Text style={{ marginTop: 4, color: theme.colors.muted, fontWeight: "600" }}>{item.email}</Text>
+                  <Text style={{ marginTop: 4, color: theme.colors.muted, fontWeight: "600" }}></Text>
                 </View>
               </Row>
             </View>
