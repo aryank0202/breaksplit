@@ -1,11 +1,14 @@
-import { arrayUnion, doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
-import { auth, db } from "../firebase";
+import { getDownloadURL, getStorage, ref, uploadString } from "firebase/storage";
+import { arrayUnion, deleteDoc, doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import * as FileSystem from "expo-file-system/legacy";
+import { app, auth, db, storageBucketCandidates } from "../firebase";
 import type { UserDoc } from "../types/backend";
 
 type UpsertPayload = {
   displayName: string;
   venmoHandle?: string;
   email?: string;
+  photoURL?: string;
 };
 
 export async function upsertUserProfile(uid: string, payload: UpsertPayload) {
@@ -16,6 +19,7 @@ export async function upsertUserProfile(uid: string, payload: UpsertPayload) {
     displayName: payload.displayName.trim(),
     email: payload.email ?? auth.currentUser?.email ?? "",
   };
+  if (payload.photoURL !== undefined) nextData.photoURL = payload.photoURL;
   const venmoHandle = payload.venmoHandle?.trim();
   if (venmoHandle) nextData.venmoHandle = venmoHandle;
 
@@ -48,4 +52,34 @@ export async function addUserTrip(uid: string, tripId: string) {
     },
     { merge: true }
   );
+}
+
+export async function uploadProfilePhoto(uid: string, localUri: string, base64Data?: string | null) {
+  const bucketUrls = storageBucketCandidates.map((bucket) => `gs://${bucket}`);
+  const storages = bucketUrls.length > 0 ? bucketUrls.map((url) => getStorage(app, url)) : [getStorage(app)];
+  const resolvedBase64 =
+    base64Data ?? (await FileSystem.readAsStringAsync(localUri, { encoding: FileSystem.EncodingType.Base64 }));
+
+  const attempts: string[] = [];
+  for (let index = 0; index < storages.length; index += 1) {
+    const storage = storages[index];
+    const bucketUrl = bucketUrls[index] ?? "default";
+    const fileRef = ref(storage, `profilePhotos/${uid}/${Date.now()}.jpg`);
+    try {
+      await uploadString(fileRef, resolvedBase64, "base64", { contentType: "image/jpeg" });
+      return getDownloadURL(fileRef);
+    } catch (error: any) {
+      const code = error?.code ? String(error.code) : "storage/unknown";
+      const server = error?.customData?.serverResponse ? String(error.customData.serverResponse) : "";
+      const detail = server ? `${code}: ${server}` : `${code}: ${String(error?.message ?? "no-message")}`;
+      attempts.push(`${bucketUrl} -> ${detail}`);
+    }
+  }
+
+  const attemptInfo = attempts.length > 0 ? attempts.join(" | ") : "no upload attempts";
+  throw new Error(`Profile photo upload failed (${attemptInfo}).`);
+}
+
+export async function deleteUserProfileDoc(uid: string) {
+  await deleteDoc(doc(db, "users", uid));
 }

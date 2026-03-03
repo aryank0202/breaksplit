@@ -10,6 +10,7 @@ import CreateTripScreen from "../screens/CreateTripScreen";
 import LoginScreen from "../screens/LoginScreen";
 import SignUpScreen from "../screens/SignUpScreen";
 import ProfileScreen from "../screens/ProfileScreen";
+import EditProfileScreen from "../screens/EditProfile";
 import ItineraryScreen from "../screens/ItineraryScreen";
 import AddExpenseScreen from "../screens/AddExpenseScreen";
 import ItineraryDayScreen from "../screens/ItineraryDayScreen";
@@ -45,6 +46,7 @@ export default function AppNavigator() {
         uid: firebaseUser.uid,
         displayName: firebaseUser.displayName ?? firebaseUser.email?.split("@")[0] ?? "User",
         email: firebaseUser.email ?? "",
+        photoURL: firebaseUser.photoURL ?? undefined,
         venmoHandle: undefined,
       });
 
@@ -55,6 +57,7 @@ export default function AppNavigator() {
             await upsertUserProfile(firebaseUser.uid, {
               displayName: firebaseUser.displayName ?? firebaseUser.email?.split("@")[0] ?? "User",
               email: firebaseUser.email ?? "",
+              photoURL: firebaseUser.photoURL ?? undefined,
             });
           }
 
@@ -64,6 +67,7 @@ export default function AppNavigator() {
               uid: firebaseUser.uid,
               displayName: freshUser.displayName,
               email: freshUser.email,
+              photoURL: freshUser.photoURL,
               venmoHandle: freshUser.venmoHandle,
             });
           }
@@ -164,12 +168,14 @@ export default function AppNavigator() {
             />
             <Stack.Screen name="TripHome" component={TripHomeScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="EditProfile" component={EditProfileScreen} />
           </>
         ) : (
           <>
             <Stack.Screen name="TripHome" component={TripHomeScreen} />
             <Stack.Screen name="CreateTrip" component={CreateTripScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="Itinerary" component={ItineraryScreen} />
             <Stack.Screen name="AddExpense" component={AddExpenseScreen} />
             <Stack.Screen name="ItineraryDay" component={ItineraryDayScreen} />

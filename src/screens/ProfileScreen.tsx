@@ -1,20 +1,18 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { Feather } from "@expo/vector-icons";
 import {
-  Alert,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { signOut } from "firebase/auth";
-import { theme } from "../theme";
 import { useTrip } from "../state/TripStore";
-import { getUser, upsertUserProfile } from "../api/users";
 import { auth } from "../firebase";
+import { theme } from "../theme";
 
 function initialsFromName(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -25,62 +23,16 @@ function initialsFromName(name: string) {
 
 export default function ProfileScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { currentUser, setCurrentUser, resetStore } = useTrip();
-  const [displayName, setDisplayName] = useState("");
-  const [venmoHandle, setVenmoHandle] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    async function loadProfile() {
-      if (!currentUser?.uid) return;
-      setLoading(true);
-      try {
-        const userDoc = await getUser(currentUser.uid);
-        if (!userDoc) return;
-        setDisplayName(userDoc.displayName);
-        setVenmoHandle(userDoc.venmoHandle ?? "");
-      } catch (error: any) {
-        Alert.alert("Error", error?.message ?? "Could not load profile.");
-      } finally {
-        setLoading(false);
-      }
-    }
-    void loadProfile();
-  }, [currentUser?.uid]);
-
-  async function onSave() {
-    if (!currentUser?.uid) return;
-    if (!displayName.trim()) {
-      Alert.alert("Name required", "Please enter a display name.");
-      return;
-    }
-    setSaving(true);
-    try {
-      await upsertUserProfile(currentUser.uid, {
-        displayName: displayName.trim(),
-        venmoHandle: venmoHandle.trim(),
-        email: currentUser.email,
-      });
-      setCurrentUser({
-        ...currentUser,
-        displayName: displayName.trim(),
-        venmoHandle: venmoHandle.trim() || undefined,
-      });
-      Alert.alert("Saved", "Profile updated.");
-    } catch (error: any) {
-      Alert.alert("Save failed", error?.message ?? "Could not update profile.");
-    } finally {
-      setSaving(false);
-    }
-  }
+  const { currentUser, resetStore } = useTrip();
 
   async function onLogout() {
     await signOut(auth);
     resetStore();
   }
 
-  const avatarText = useMemo(() => initialsFromName(displayName || currentUser?.displayName || ""), [displayName, currentUser?.displayName]);
+  const displayName = currentUser?.displayName ?? "User";
+  const email = currentUser?.email ?? "";
+  const avatarText = useMemo(() => initialsFromName(displayName), [displayName]);
 
   return (
     <View style={styles.screen}>
@@ -93,48 +45,47 @@ export default function ProfileScreen({ navigation }: any) {
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{avatarText}</Text>
-          </View>
-          <Text style={styles.name}>{displayName || currentUser?.displayName || "User"}</Text>
-          <Text style={styles.email}>{currentUser?.email ?? ""}</Text>
+          {currentUser?.photoURL ? (
+            <Image source={{ uri: currentUser.photoURL }} style={styles.avatarImage} />
+          ) : (
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{avatarText}</Text>
+            </View>
+          )}
+          <Text style={styles.name}>{displayName}</Text>
+          <Text style={styles.email}>{email}</Text>
         </View>
 
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>ACCOUNT</Text>
-          <View style={styles.fieldWrap}>
-            <Text style={styles.fieldLabel}>Display Name</Text>
-            <TextInput
-              value={displayName}
-              onChangeText={setDisplayName}
-              placeholder="Your name"
-              placeholderTextColor="#94A3B8"
-              style={styles.input}
-              editable={!loading}
-            />
-          </View>
-          <View style={styles.fieldWrap}>
-            <Text style={styles.fieldLabel}>Venmo Handle</Text>
-            <TextInput
-              value={venmoHandle}
-              onChangeText={setVenmoHandle}
-              placeholder="@yourhandle"
-              placeholderTextColor="#94A3B8"
-              autoCapitalize="none"
-              style={styles.input}
-              editable={!loading}
-            />
-          </View>
-          <Pressable style={styles.saveButton} onPress={onSave} disabled={saving || loading}>
-            <Text style={styles.saveButtonText}>{saving ? "Saving..." : "Save Profile"}</Text>
+          <Pressable style={styles.itemRow} onPress={() => navigation.navigate("EditProfile")}>
+            <View style={[styles.itemIconWrap, { backgroundColor: "#DBEAFE" }]}>
+              <Feather name="user" size={18} color="#2563EB" />
+            </View>
+            <View style={styles.itemTextWrap}>
+              <Text style={styles.itemTitle}>Edit Profile</Text>
+              <Text style={styles.itemSubtitle}>Update your name and email</Text>
+            </View>
+            <Feather name="chevron-right" size={18} color="#94A3B8" />
           </Pressable>
         </View>
 
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, { paddingBottom: 0 }]}>
           <Text style={styles.sectionTitle}>SUPPORT</Text>
-          <Pressable onPress={onLogout} style={styles.logoutButton}>
-            <Text style={styles.logoutText}>Log Out</Text>
+          <Pressable onPress={onLogout} style={styles.itemRow}>
+            <View style={[styles.itemIconWrap, { backgroundColor: "#FEE2E2" }]}>
+              <Feather name="log-out" size={18} color="#DC2626" />
+            </View>
+            <View style={styles.itemTextWrap}>
+              <Text style={styles.logoutText}>Log Out</Text>
+            </View>
+            <Feather name="chevron-right" size={18} color="#94A3B8" />
           </Pressable>
+        </View>
+
+        <View style={styles.footer}>
+          <Text style={styles.footerTop}>BreakSplit v1.0.0</Text>
+          <Text style={styles.footerBottom}>Made with love for college students</Text>
         </View>
       </ScrollView>
     </View>
@@ -158,13 +109,13 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: "#111827",
-    fontSize: 32,
+    fontSize: 34,
     fontWeight: "800",
   },
   content: {
     padding: 16,
     paddingBottom: 28,
-    gap: 14,
+    gap: 16,
   },
   profileCard: {
     backgroundColor: "white",
@@ -181,6 +132,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#6366F1",
     alignItems: "center",
     justifyContent: "center",
+  },
+  avatarImage: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
   },
   avatarText: {
     color: "white",
@@ -204,7 +160,7 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
     borderRadius: 16,
     overflow: "hidden",
-    paddingBottom: 14,
+    paddingBottom: 2,
   },
   sectionTitle: {
     paddingHorizontal: 18,
@@ -217,51 +173,53 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
   },
-  fieldWrap: {
+  itemRow: {
+    minHeight: 72,
     paddingHorizontal: 16,
-    marginTop: 12,
-    gap: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    gap: 12,
   },
-  fieldLabel: {
-    color: "#334155",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  input: {
-    minHeight: 46,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    paddingHorizontal: 12,
-    color: "#111827",
-    backgroundColor: "white",
-  },
-  saveButton: {
-    marginTop: 14,
-    marginHorizontal: 16,
-    backgroundColor: theme.colors.primary,
-    minHeight: 46,
-    borderRadius: 12,
+  itemIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },
-  saveButtonText: {
-    color: "white",
+  itemTextWrap: {
+    flex: 1,
+  },
+  itemTitle: {
+    color: "#0F172A",
+    fontSize: 16,
     fontWeight: "800",
   },
-  logoutButton: {
-    marginTop: 12,
-    marginHorizontal: 16,
-    minHeight: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#FECACA",
-    backgroundColor: "#FEF2F2",
-    alignItems: "center",
-    justifyContent: "center",
+  itemSubtitle: {
+    marginTop: 3,
+    color: "#64748B",
+    fontSize: 14,
+    fontWeight: "600",
   },
   logoutText: {
     color: "#DC2626",
     fontWeight: "800",
+    fontSize: 16,
+  },
+  footer: {
+    marginTop: 12,
+    alignItems: "center",
+    gap: 4,
+  },
+  footerTop: {
+    color: "#94A3B8",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  footerBottom: {
+    color: "#A1A1AA",
+    fontSize: 12,
   },
 });
