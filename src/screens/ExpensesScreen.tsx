@@ -99,7 +99,7 @@ export default function ExpensesScreen({ navigation }: any) {
   const emptyText = useMemo(() => (loading ? "Loading..." : "No expenses yet."), [loading]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+    <View style={{ flex: 1, backgroundColor: "#F3F4F6" }}>
       <FlatList
         contentContainerStyle={{ padding: 20, paddingBottom: 110 }}
         ListHeaderComponent={

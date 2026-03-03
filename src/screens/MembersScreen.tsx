@@ -71,16 +71,8 @@ export default function MembersScreen() {
     Alert.alert("Copied", "Invite code copied to clipboard.");
   }
 
-  async function shareInviteLink() {
-    if (!inviteCode) return;
-    const link = `https://breaksplit.app/join/${inviteCode}`;
-    await Share.share({
-      message: `Join our trip on BreakSplit.\nInvite code: ${inviteCode}\nLink: ${link}`,
-    });
-  }
-
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+    <View style={{ flex: 1, backgroundColor: "#F3F4F6" }}>
       <FlatList
         contentContainerStyle={{ padding: 20, paddingBottom: 30 }}
         data={members}
@@ -89,14 +81,14 @@ export default function MembersScreen() {
           <View style={{ gap: 14 }}>
             <View
               style={{
-                backgroundColor: "#EFF6FF",
+                backgroundColor: "#FFFFFF",
                 borderRadius: 16,
                 padding: 16,
                 borderWidth: 1,
                 borderColor: "#DBEAFE",
               }}
             >
-              <Text style={{ color: theme.colors.muted, fontWeight: "800" }}>Total Members</Text>
+              <Text style={{ color: theme.colors.muted, fontWeight: "800" }}>Members</Text>
               <Text style={{ marginTop: 6, fontSize: 28, fontWeight: "900", color: theme.colors.primary }}>{totalMembers}</Text>
             </View>
 
@@ -112,10 +104,7 @@ export default function MembersScreen() {
           <Card
             style={{
               padding: 0,
-              overflow: "hidden",
-              marginTop: index === 0 ? -4 : 0,
-              borderTopLeftRadius: index === 0 ? 0 : theme.radius.card,
-              borderTopRightRadius: index === 0 ? 0 : theme.radius.card,
+              overflow: "hidden"
             }}
           >
             <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
@@ -157,18 +146,6 @@ export default function MembersScreen() {
                     </Pressable>
                   </Row>
                 </View>
-                <Pressable
-                  onPress={shareInviteLink}
-                  style={({ pressed }) => ({
-                    backgroundColor: theme.colors.primary,
-                    paddingVertical: 14,
-                    borderRadius: 16,
-                    alignItems: "center",
-                    opacity: pressed ? 0.9 : 1,
-                  })}
-                >
-                  <Text style={{ color: "white", fontWeight: "900", fontSize: 16 }}>Share Invite Link</Text>
-                </Pressable>
               </View>
             </Card>
           </View>

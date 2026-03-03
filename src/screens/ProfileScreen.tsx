@@ -85,7 +85,7 @@ export default function ProfileScreen({ navigation }: any) {
 
         <View style={styles.footer}>
           <Text style={styles.footerTop}>BreakSplit v1.0.0</Text>
-          <Text style={styles.footerBottom}>Made with love for college students</Text>
+          <Text style={styles.footerBottom}>Made with 💖 for college students!</Text>
         </View>
       </ScrollView>
     </View>
