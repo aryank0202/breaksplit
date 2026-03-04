@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Pressable, Text, View } from "react-native";
+import { Alert, FlatList, Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
 import Card from "../components/Card";
@@ -7,7 +7,7 @@ import Row from "../components/Row";
 import Avatar from "../components/Avatar";
 import Pill from "../components/Pill";
 import { useTrip } from "../state/TripStore";
-import { confirmSplitPaid, listExpenseSplits, listExpenses, markMySplitPaid } from "../api/expenses";
+import { listExpenseSplits, listExpenses, markMySplitPaid } from "../api/expenses";
 import { listMembers } from "../api/trips";
 import { formatCents } from "../utils/money";
 import { openVenmoPay } from "../utils/venmo";
@@ -43,7 +43,7 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
   const [loading, setLoading] = useState(true);
   const [expense, setExpense] = useState<any | null>(null);
   const [splitRows, setSplitRows] = useState<SplitRow[]>([]);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [showVenmoModal, setShowVenmoModal] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -77,7 +77,6 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
         });
         rowData.sort((a, b) => a.name.localeCompare(b.name));
         setSplitRows(rowData);
-        setIsAdmin((memberById.get(currentUser.uid)?.role ?? "member") === "admin");
       } catch (error: any) {
         Alert.alert("Load failed", error?.message ?? "Could not load expense details.");
       } finally {
@@ -104,7 +103,6 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
 
   const payer = useMemo(() => splitRows.find((row) => row.memberId === expense?.payerUid), [expense?.payerUid, splitRows]);
   const mySplit = useMemo(() => splitRows.find((row) => row.memberId === currentUser?.uid), [currentUser?.uid, splitRows]);
-  const canConfirm = currentUser?.uid === expense?.payerUid || isAdmin;
   const canPay = Boolean(payer?.venmoHandle && mySplit && mySplit.memberId !== expense?.payerUid && mySplit.owesCents > 0);
 
   async function onMarkPaid() {
@@ -118,20 +116,10 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
     }
   }
 
-  async function onConfirm(uid: string) {
-    if (!selectedTripId) return;
-    try {
-      await confirmSplitPaid(selectedTripId, expenseId, uid);
-      bumpTripDataVersion();
-      await reload();
-    } catch (error: any) {
-      Alert.alert("Confirm failed", error?.message ?? "Could not confirm payment.");
-    }
-  }
-
-  async function onPayVenmo() {
+  async function onOpenVenmoFromModal() {
     if (!payer?.venmoHandle || !mySplit || !expense) return;
     try {
+      setShowVenmoModal(false);
       await openVenmoPay({
         recipientHandle: payer.venmoHandle,
         amountDollars: (mySplit.owesCents / 100).toFixed(2),
@@ -163,7 +151,7 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
 
       <FlatList
         contentContainerStyle={{ padding: 20, paddingBottom: 170 }}
-        data={splitRows}
+        data={splitRows.filter((row) => row.memberId !== expense?.payerUid)}
         keyExtractor={(row) => row.memberId}
         ListHeaderComponent={
           <View style={{ gap: 14 }}>
@@ -201,23 +189,6 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
                 </View>
                 <Pill label={pill.label} tone={pill.tone} />
               </Row>
-              {canConfirm && item.memberId !== expense?.payerUid && item.state !== "confirmed" ? (
-                <Pressable
-                  onPress={() => onConfirm(item.memberId)}
-                  style={{
-                    marginTop: 10,
-                    minHeight: 40,
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    borderColor: "#93C5FD",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: "#EFF6FF",
-                  }}
-                >
-                  <Text style={{ fontWeight: "800", color: "#1D4ED8" }}>Confirm</Text>
-                </Pressable>
-              ) : null}
             </Card>
           );
         }}
@@ -227,10 +198,9 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
       {mySplit && mySplit.memberId !== expense?.payerUid ? (
         <View style={{ position: "absolute", left: 20, right: 20, bottom: 20 + insets.bottom, gap: 10 }}>
           <Pressable
-            onPress={onPayVenmo}
-            disabled={!canPay}
+            onPress={() => setShowVenmoModal(true)}
             style={({ pressed }) => ({
-              backgroundColor: canPay ? "#3B82F6" : "#D1D5DB",
+              backgroundColor: "#3B82F6",
               paddingVertical: 16,
               borderRadius: 16,
               alignItems: "center",
@@ -241,7 +211,6 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
               Pay in Venmo ({formatCents(mySplit.owesCents)})
             </Text>
           </Pressable>
-          {!canPay ? <Text style={{ color: "#64748B", textAlign: "center", fontSize: 12 }}>Payer has no Venmo handle set.</Text> : null}
 
           <Pressable
             onPress={onMarkPaid}
@@ -262,6 +231,68 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
           </Pressable>
         </View>
       ) : null}
+
+      <Modal visible={showVenmoModal} transparent animationType="fade" onRequestClose={() => setShowVenmoModal(false)}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(15, 23, 42, 0.28)",
+            justifyContent: "center",
+            paddingHorizontal: 16,
+          }}
+        >
+          <View style={{ backgroundColor: "white", borderRadius: 22, padding: 16 }}>
+            <View style={{ alignItems: "center" }}>
+              <View style={{ width: 44, height: 4, borderRadius: 999, backgroundColor: "#D1D5DB", marginBottom: 20 }} />
+              <View
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 28,
+                  backgroundColor: "#DBEAFE",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <View style={{ width: 20, height: 20, borderRadius: 999, borderWidth: 3, borderColor: "#3B82F6" }} />
+              </View>
+              <Text style={{ marginTop: 16, fontWeight: "900", color: "#0F172A", fontSize: 33, lineHeight: 34 }}>Open Venmo?</Text>
+              <Text style={{ marginTop: 10, color: "#334155", textAlign: "center", fontSize: 18, lineHeight: 24 }}>
+                After sending payment, return to BreakSplit and tap 'Mark as Paid'.
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={onOpenVenmoFromModal}
+              disabled={!canPay}
+              style={{
+                marginTop: 18,
+                minHeight: 54,
+                borderRadius: 14,
+                backgroundColor: canPay ? "#4294CC" : "#D1D5DB",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text style={{ color: "white", fontWeight: "900", fontSize: 20 }}>Open Venmo</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setShowVenmoModal(false)}
+              style={{
+                marginTop: 10,
+                minHeight: 54,
+                borderRadius: 14,
+                backgroundColor: "#E5E7EB",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text style={{ color: "#0F172A", fontWeight: "900", fontSize: 20 }}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

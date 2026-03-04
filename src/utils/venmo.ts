@@ -19,10 +19,11 @@ export async function openVenmoPay({
   const appUrl = `venmo://paycharge?txn=pay&recipients=${encodedHandle}&amount=${encodedAmount}&note=${encodedNote}`;
   const webUrl = `https://venmo.com/?txn=pay&recipients=${encodedHandle}&amount=${encodedAmount}&note=${encodedNote}`;
 
-  const canOpenApp = await Linking.canOpenURL(appUrl);
-  if (canOpenApp) {
+  try {
     await Linking.openURL(appUrl);
     return;
+  } catch {
+    // Fall back to web when Venmo app deeplink is unavailable.
   }
 
   await Linking.openURL(webUrl);

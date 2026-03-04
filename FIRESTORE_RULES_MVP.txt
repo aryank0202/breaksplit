@@ -11,6 +11,10 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
     }
 
+    function isExpenseCreator() {
+      return request.auth != null && resource.data.createdBy == request.auth.uid;
+    }
+
     match /trips/{tripId} {
       // Allow signed-in users to discover trips by invite code.
       allow read: if request.auth != null;
@@ -28,7 +32,10 @@ service cloud.firestore {
       }
 
       match /expenses/{expenseId} {
-        allow read, write: if isTripMember(tripId);
+        allow read: if isTripMember(tripId);
+        allow create: if isTripMember(tripId) &&
+          request.resource.data.createdBy == request.auth.uid;
+        allow update, delete: if isTripMember(tripId) && isExpenseCreator();
 
         match /splits/{uid} {
           allow read, write: if isTripMember(tripId);
