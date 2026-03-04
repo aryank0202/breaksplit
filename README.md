@@ -7,21 +7,11 @@ Settle!
 
 ## Profile Propagation (All Devices)
 
-This repo now includes a Cloud Function that propagates user profile changes
-from `users/{uid}` to matching `trips/{tripId}/members/{uid}` docs.
+Current default path is Spark-compatible (no Blaze required):
+- Profile save writes `users/{uid}`.
+- Then it fan-outs updates to this user's `trips/{tripId}/members/{uid}` docs.
+- Other users read member snapshots and see updated name/photo on refresh.
 
-Function: `propagateUserProfileToMembers`  
-File: `functions/src/index.ts`
-
-### Deploy
-
-1. Install Firebase CLI and login.
-2. Select your project:
-   `firebase use <your-project-id>`
-3. Install functions dependencies:
-   `cd functions && npm install`
-4. Deploy:
-   `npm run deploy`
-
-After deployment, changing display name/email/photo/venmo in Edit Profile
-will propagate to other users' devices as their app data refreshes.
+Optional advanced path:
+- A Cloud Function implementation exists under `functions/src/index.ts`.
+- Deploying it requires Blaze.

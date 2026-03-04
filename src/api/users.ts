@@ -1,7 +1,7 @@
 import { getDownloadURL, getStorage, ref, uploadString } from "firebase/storage";
 import {
   arrayUnion,
-  collectionGroup,
+  collection,
   deleteDoc,
   doc,
   getDoc,
@@ -22,9 +22,30 @@ type UpsertPayload = {
   photoURL?: string;
 };
 
+async function listCandidateTripIdsForUser(uid: string, existingUserDoc: UserDoc | null) {
+  const tripIds = new Set<string>();
+  if (existingUserDoc?.joinedTripIds?.length) {
+    existingUserDoc.joinedTripIds.forEach((tripId) => tripIds.add(tripId));
+  }
+  if (existingUserDoc?.lastTripId) {
+    tripIds.add(existingUserDoc.lastTripId);
+  }
+
+  // Include trips created by this user in case joinedTripIds was never backfilled.
+  try {
+    const createdTripsSnap = await getDocs(query(collection(db, "trips"), where("createdBy", "==", uid)));
+    createdTripsSnap.forEach((tripDoc) => tripIds.add(tripDoc.id));
+  } catch {
+    // Best effort only; primary propagation path uses known trip IDs.
+  }
+
+  return Array.from(tripIds);
+}
+
 export async function upsertUserProfile(uid: string, payload: UpsertPayload) {
   const ref = doc(db, "users", uid);
   const existing = await getDoc(ref);
+  const existingUserDoc = existing.exists() ? (existing.data() as UserDoc) : null;
 
   const nextData: Record<string, unknown> = {
     displayName: payload.displayName.trim(),
@@ -40,14 +61,15 @@ export async function upsertUserProfile(uid: string, payload: UpsertPayload) {
 
   await setDoc(ref, nextData, { merge: true });
 
-  // Keep trip membership snapshots in sync so names/photos are readable without user-doc access.
+  // Spark-compatible propagation: write to this user's member snapshots across known trips.
   try {
-    const memberships = await getDocs(query(collectionGroup(db, "members"), where("uid", "==", uid)));
-    if (!memberships.empty) {
-      const updates = memberships.docs.map(async (membershipDoc) => {
+    const tripIds = await listCandidateTripIdsForUser(uid, existingUserDoc);
+    if (tripIds.length > 0) {
+      const updates = tripIds.map(async (tripId) => {
         await setDoc(
-          membershipDoc.ref,
+          doc(db, "trips", tripId, "members", uid),
           {
+            uid,
             displayName: nextData.displayName,
             email: nextData.email,
             photoURL: payload.photoURL ?? null,
@@ -70,7 +92,7 @@ export async function upsertUserProfile(uid: string, payload: UpsertPayload) {
     if (!code.includes("permission-denied")) {
       throw error;
     }
-    // Membership mirror writes can be blocked by security rules in some projects.
+    // Some trip membership docs may not be writable due to rules/state drift.
     // The primary user profile write above has already succeeded.
     console.warn("Skipping member snapshot sync due to Firestore rules:", error?.message ?? error);
   }
