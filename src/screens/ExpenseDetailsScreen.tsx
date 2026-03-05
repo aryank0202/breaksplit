@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Modal, Pressable, Text, View } from "react-native";
+import { Alert, FlatList, Linking, Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
 import Card from "../components/Card";
@@ -103,7 +103,6 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
 
   const payer = useMemo(() => splitRows.find((row) => row.memberId === expense?.payerUid), [expense?.payerUid, splitRows]);
   const mySplit = useMemo(() => splitRows.find((row) => row.memberId === currentUser?.uid), [currentUser?.uid, splitRows]);
-  const canPay = Boolean(payer?.venmoHandle && mySplit && mySplit.memberId !== expense?.payerUid && mySplit.owesCents > 0);
 
   async function onMarkPaid() {
     if (!selectedTripId || !currentUser) return;
@@ -117,14 +116,22 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
   }
 
   async function onOpenVenmoFromModal() {
-    if (!payer?.venmoHandle || !mySplit || !expense) return;
+    if (!mySplit || !expense) return;
     try {
       setShowVenmoModal(false);
-      await openVenmoPay({
-        recipientHandle: payer.venmoHandle,
-        amountDollars: (mySplit.owesCents / 100).toFixed(2),
-        note: `${expense.title} via BreakSplit`,
-      });
+      if (payer?.venmoHandle) {
+        await openVenmoPay({
+          recipientHandle: payer.venmoHandle,
+          amountDollars: (mySplit.owesCents / 100).toFixed(2),
+          note: `${expense.title} via BreakSplit`,
+        });
+        return;
+      }
+      try {
+        await Linking.openURL("venmo://");
+      } catch {
+        await Linking.openURL("https://venmo.com/");
+      }
     } catch (error: any) {
       Alert.alert("Venmo error", error?.message ?? "Could not open Venmo.");
     }
@@ -264,12 +271,11 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
 
             <Pressable
               onPress={onOpenVenmoFromModal}
-              disabled={!canPay}
               style={{
                 marginTop: 18,
                 minHeight: 54,
                 borderRadius: 14,
-                backgroundColor: canPay ? "#4294CC" : "#D1D5DB",
+                backgroundColor: "#4294CC",
                 alignItems: "center",
                 justifyContent: "center",
               }}
