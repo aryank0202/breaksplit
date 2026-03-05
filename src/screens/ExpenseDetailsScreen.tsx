@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Alert, FlatList, Linking, Modal, Pressable, Text, View } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
 import Card from "../components/Card";
@@ -100,6 +101,16 @@ export default function ExpenseDetailsScreen({ navigation, route }: any) {
       })
     );
   }
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void reload();
+      const id = setInterval(() => {
+        void reload();
+      }, 3000);
+      return () => clearInterval(id);
+    }, [currentUser?.uid, expenseId, selectedTripId])
+  );
 
   const payer = useMemo(() => splitRows.find((row) => row.memberId === expense?.payerUid), [expense?.payerUid, splitRows]);
   const mySplit = useMemo(() => splitRows.find((row) => row.memberId === currentUser?.uid), [currentUser?.uid, splitRows]);

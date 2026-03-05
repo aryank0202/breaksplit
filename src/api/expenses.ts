@@ -94,9 +94,15 @@ export async function createExpense(tripId: string, input: CreateExpenseInput) {
 }
 
 export async function markMySplitPaid(tripId: string, expenseId: string, uid: string) {
-  await updateDoc(doc(db, "trips", tripId, "expenses", expenseId, "splits", uid), {
-    state: "marked_paid",
+  const splitRef = doc(db, "trips", tripId, "expenses", expenseId, "splits", uid);
+  const splitSnap = await getDoc(splitRef);
+  const owedCents = (splitSnap.data() as SplitDoc | undefined)?.owedCents ?? 0;
+
+  await updateDoc(splitRef, {
+    state: "confirmed",
+    paidCents: owedCents,
     markedPaidAt: serverTimestamp(),
+    confirmedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 }
@@ -204,7 +210,7 @@ export async function computeTotals(tripId: string, uid: string) {
     }
 
     const mine = splits.find((split) => split.uid === uid);
-    if (mine && expense.payerUid !== uid && mine.state !== "confirmed") {
+    if (mine && expense.payerUid !== uid && mine.state === "unpaid") {
       youOweCents += mine.owedCents;
     }
   }

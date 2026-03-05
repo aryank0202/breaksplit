@@ -37,10 +37,10 @@ export default function ExpensesScreen({ navigation }: any) {
   const [youreOwed, setYoureOwed] = useState("$0.00");
   const [memberNames, setMemberNames] = useState<Record<string, string>>({});
 
-  async function loadExpenses() {
+  async function loadExpenses(silent = false) {
     if (!selectedTripId || !currentUser) return;
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [expenseRows, totals, members] = await Promise.all([
         listExpenses(selectedTripId),
         computeTotals(selectedTripId, currentUser.uid),
@@ -57,7 +57,7 @@ export default function ExpensesScreen({ navigation }: any) {
     } catch (error: any) {
       Alert.alert("Error", error?.message ?? "Could not load expenses.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
@@ -68,6 +68,10 @@ export default function ExpensesScreen({ navigation }: any) {
   useFocusEffect(
     React.useCallback(() => {
       void loadExpenses();
+      const id = setInterval(() => {
+        void loadExpenses(true);
+      }, 3000);
+      return () => clearInterval(id);
     }, [currentUser?.uid, selectedTripId])
   );
 
