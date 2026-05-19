@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { Feather } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -21,14 +23,21 @@ function digitsOnly(value: string) {
   return value.replace(/[^\d]/g, "");
 }
 
-function plusDays(start: Date, days: number) {
-  const date = new Date(start);
-  date.setDate(date.getDate() + days);
-  return date;
+function toIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
-function toIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10);
+function formatTripDate(date: Date) {
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatTripDateRange(startDate: Date | null, endDate: Date | null) {
+  if (startDate && endDate) return `${formatTripDate(startDate)} - ${formatTripDate(endDate)}`;
+  if (startDate) return `${formatTripDate(startDate)} - Select end date`;
+  return "Select first and last day";
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs = 20000) {
@@ -47,16 +56,20 @@ export default function CreateTripScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { currentUser, setSelectedTripId, setSelectedTrip } = useTrip();
   const [tripName, setTripName] = useState("");
-  const [tripDurationDays, setTripDurationDays] = useState("");
+  const [tripStartDate, setTripStartDate] = useState<Date | null>(null);
+  const [tripEndDate, setTripEndDate] = useState<Date | null>(null);
+  const [showDateModal, setShowDateModal] = useState(false);
+  const [activeTripDateField, setActiveTripDateField] = useState<"start" | "end">("start");
   const [peopleCount, setPeopleCount] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [loadingCreate, setLoadingCreate] = useState(false);
   const [loadingJoin, setLoadingJoin] = useState(false);
   const deviceTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York";
+  const tripDateText = formatTripDateRange(tripStartDate, tripEndDate);
 
   const canCreate = useMemo(
-    () => tripName.trim().length > 0 && tripDurationDays.trim().length > 0 && peopleCount.trim().length > 0,
-    [peopleCount, tripDurationDays, tripName]
+    () => tripName.trim().length > 0 && !!tripStartDate && !!tripEndDate && peopleCount.trim().length > 0,
+    [peopleCount, tripEndDate, tripName, tripStartDate]
   );
 
   async function applySelectedTrip(tripId: string) {
@@ -77,9 +90,12 @@ export default function CreateTripScreen({ navigation }: any) {
 
   async function onCreateTrip() {
     if (!canCreate) return;
-    const durationDays = parseInt(tripDurationDays, 10);
-    if (!Number.isInteger(durationDays) || durationDays <= 0) {
-      Alert.alert("Invalid duration", "Trip duration must be a positive number.");
+    if (!tripStartDate || !tripEndDate) {
+      Alert.alert("Dates needed", "Select the first and last day of your trip.");
+      return;
+    }
+    if (tripEndDate < tripStartDate) {
+      Alert.alert("Invalid dates", "The last day of the trip must be after the first day.");
       return;
     }
     const members = parseInt(peopleCount, 10);
@@ -90,10 +106,8 @@ export default function CreateTripScreen({ navigation }: any) {
 
     try {
       setLoadingCreate(true);
-      const start = new Date();
-      const end = plusDays(start, durationDays - 1);
-      const startDate = toIsoDate(start);
-      const endDate = toIsoDate(end);
+      const startDate = toIsoDate(tripStartDate);
+      const endDate = toIsoDate(tripEndDate);
       const { tripId, inviteCode: code } = await withTimeout(
         createTrip({
           name: tripName.trim(),
@@ -187,18 +201,20 @@ export default function CreateTripScreen({ navigation }: any) {
           </View>
 
           <View style={styles.fieldBlock}>
-            <Text style={styles.fieldLabel}>Trip Duration (Days)</Text>
-            <View style={styles.inputWrap}>
+            <Text style={styles.fieldLabel}>Trip Dates</Text>
+            <Pressable
+              style={styles.inputWrap}
+              onPress={() => {
+                setActiveTripDateField(tripStartDate && !tripEndDate ? "end" : "start");
+                setShowDateModal(true);
+              }}
+            >
               <Feather name="calendar" size={18} color="#94A3B8" />
-              <TextInput
-                value={tripDurationDays}
-                onChangeText={(v) => setTripDurationDays(digitsOnly(v))}
-                placeholder="How many days?"
-                placeholderTextColor="#9CA3AF"
-                keyboardType="number-pad"
-                style={styles.input}
-              />
-            </View>
+              <Text style={[styles.inputText, !tripStartDate || !tripEndDate ? styles.placeholderText : null]}>
+                {tripDateText}
+              </Text>
+              <Feather name="chevron-down" size={18} color="#94A3B8" />
+            </Pressable>
           </View>
 
           <View style={styles.fieldBlock}>
@@ -245,6 +261,103 @@ export default function CreateTripScreen({ navigation }: any) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal visible={showDateModal} transparent animationType="slide" onRequestClose={() => setShowDateModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.dateSheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Trip Dates</Text>
+              <Pressable onPress={() => setShowDateModal(false)} style={styles.closeCircle}>
+                <Feather name="x" size={20} color="#6B7280" />
+              </Pressable>
+            </View>
+
+            <View style={styles.dateChoiceRow}>
+              <Pressable
+                onPress={() => setActiveTripDateField("start")}
+                style={[
+                  styles.dateChoice,
+                  activeTripDateField === "start" ? styles.dateChoiceActive : null,
+                ]}
+              >
+                <Text style={styles.dateChoiceLabel}>First Day</Text>
+                <Text style={[styles.dateChoiceValue, !tripStartDate ? styles.placeholderText : null]}>
+                  {tripStartDate ? formatTripDate(tripStartDate) : "Select date"}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setActiveTripDateField("end")}
+                style={[
+                  styles.dateChoice,
+                  activeTripDateField === "end" ? styles.dateChoiceActive : null,
+                ]}
+              >
+                <Text style={styles.dateChoiceLabel}>Last Day</Text>
+                <Text style={[styles.dateChoiceValue, !tripEndDate ? styles.placeholderText : null]}>
+                  {tripEndDate ? formatTripDate(tripEndDate) : "Select date"}
+                </Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.pickerWrap}>
+              <DateTimePicker
+                value={
+                  activeTripDateField === "start"
+                    ? tripStartDate ?? new Date()
+                    : tripEndDate ?? tripStartDate ?? new Date()
+                }
+                mode="date"
+                display={Platform.OS === "ios" ? "inline" : "calendar"}
+                textColor="#111827"
+                themeVariant="light"
+                minimumDate={activeTripDateField === "end" ? tripStartDate ?? undefined : undefined}
+                onChange={(event, selected) => {
+                  if (Platform.OS === "android" && event.type === "dismissed") return;
+                  if (!selected) return;
+
+                  if (activeTripDateField === "start") {
+                    setTripStartDate(selected);
+                    if (tripEndDate && tripEndDate < selected) setTripEndDate(null);
+                    setActiveTripDateField("end");
+                  } else {
+                    setTripEndDate(selected);
+                  }
+                }}
+              />
+            </View>
+
+            <View style={styles.dateActions}>
+              <Pressable
+                onPress={() => {
+                  setTripStartDate(null);
+                  setTripEndDate(null);
+                  setActiveTripDateField("start");
+                }}
+                style={styles.secondaryDateButton}
+              >
+                <Text style={styles.secondaryDateButtonText}>Clear</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setShowDateModal(false)}
+                disabled={!tripStartDate || !tripEndDate}
+                style={[
+                  styles.primaryDateButton,
+                  !tripStartDate || !tripEndDate ? styles.primaryDateButtonDisabled : null,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.primaryDateButtonText,
+                    !tripStartDate || !tripEndDate ? styles.primaryDateButtonTextDisabled : null,
+                  ]}
+                >
+                  Done
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -315,6 +428,14 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontSize: 16,
   },
+  inputText: {
+    flex: 1,
+    color: "#111827",
+    fontSize: 16,
+  },
+  placeholderText: {
+    color: "#9CA3AF",
+  },
   createButton: {
     marginTop: 10,
     height: 52,
@@ -362,5 +483,110 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     fontWeight: "800",
     fontSize: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.24)",
+    justifyContent: "flex-end",
+  },
+  dateSheet: {
+    backgroundColor: "#F8FAFC",
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingTop: 16,
+    paddingHorizontal: 16,
+    gap: 14,
+  },
+  modalHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  modalTitle: {
+    color: "#1F2937",
+    fontSize: 30,
+    fontWeight: "800",
+  },
+  closeCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#E5E7EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dateChoiceRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  dateChoice: {
+    flex: 1,
+    minHeight: 74,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    backgroundColor: "white",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    justifyContent: "center",
+    gap: 5,
+  },
+  dateChoiceActive: {
+    borderColor: theme.colors.primary,
+    backgroundColor: "#EFF6FF",
+  },
+  dateChoiceLabel: {
+    color: "#64748B",
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  dateChoiceValue: {
+    color: "#111827",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  pickerWrap: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    backgroundColor: "white",
+    overflow: "hidden",
+  },
+  dateActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  secondaryDateButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: "#E5E7EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  secondaryDateButtonText: {
+    color: "#374151",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  primaryDateButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: theme.colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  primaryDateButtonDisabled: {
+    backgroundColor: "#E5E7EB",
+  },
+  primaryDateButtonText: {
+    color: "white",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  primaryDateButtonTextDisabled: {
+    color: "#94A3B8",
   },
 });
